@@ -291,7 +291,7 @@ void save_device_para(void)
 
 
 
-void reset_device_default_para(void)
+void reset_position_default_para(void)
 {
 		g_device_config.device_type=TAG;
 		Flash_Device_ID=TAG_ID_SUM; 
@@ -355,7 +355,7 @@ void get_device_para(void)
 		else
 		{
 				DBG_PRINT(("数据库校验错误，恢复缺省定位相关数据!\r\n"));
-				reset_device_default_para();			
+				reset_position_default_para();			
 				save_device_para();
 		}
 
@@ -364,7 +364,7 @@ void get_device_para(void)
 	else
 	{
 		DBG_PRINT(("打开文件失败，恢复缺省定位相关数据!\r\n"));
-		reset_device_default_para();		
+		reset_position_default_para();		
 		save_device_para();	
 	}
 
@@ -376,7 +376,7 @@ void get_device_para(void)
 
 
 //显示设备参数
-void show_device_para(void)
+void show_position_para(void)
 {
 
 	GLOBAL_PRINT(("device_type: %d\r\n", g_device_config.device_type));
@@ -3162,6 +3162,10 @@ ret_t tag_ranging(u8 tag_slot)
 								rett = CalcPosition_enu(d0,pct->easting,pct->northing,pct->upping,d1,hight,g_locate_net_info.on_left,clua_x_y_z);
 								if(rett < 0)
 								{
+									g_pos_info.tag_position[0] = 0;
+									g_pos_info.tag_position[1] = 0;
+									g_pos_info.tag_position[2] = 0;	
+									g_pos_info.tag_position_valid_flag = POS_INVALID;
 									DBG_PRINT("6. main_%d dis: %d cm,sub_%d: %d cm, tag pos is invalid value, rett: %d\r\n\r\n", g_locate_net_info.main_anchor_id,dis0, g_locate_net_info.sub_anchor_id,dis1, rett);
 								}
 								else
@@ -5596,6 +5600,15 @@ static ret_t mode_tag(void)
 				}
 				else
 				{
+					g_pos_info.tag_position[0] = 0;
+					g_pos_info.tag_position[1] = 0;
+					g_pos_info.tag_position[2] = 0; 
+					g_pos_info.D0 = 0;
+					g_pos_info.D1 = 0;
+					g_pos_info.main_anchor_id = 0;
+					g_pos_info.sub_anchor_id = 0;
+					g_pos_info.tag_position_valid_flag = POS_INVALID;
+			
 					DBG_ERR_PRINT("4-1 TAG_WAITE_ACTIVATION FAIL!\r\n");
 					tag_state = TAG_WAITE_ACTIVATION;			
 				}
@@ -5617,6 +5630,12 @@ static ret_t mode_tag(void)
 				}	
 				else
 				{
+					g_pos_info.tag_position[0] = 0;
+					g_pos_info.tag_position[1] = 0;
+					g_pos_info.tag_position[2] = 0; 
+					g_pos_info.D0 = 0;
+					g_pos_info.D1 = 0;
+					g_pos_info.tag_position_valid_flag = POS_INVALID;				
 					DBG_ERR_PRINT("4-2 TAG_REGISTER FAIL!\r\n");
 					tag_state = TAG_WAITE_ACTIVATION;
 				}
@@ -5638,6 +5657,12 @@ static ret_t mode_tag(void)
 				}
 				else
 				{
+					g_pos_info.tag_position[0] = 0;
+					g_pos_info.tag_position[1] = 0;
+					g_pos_info.tag_position[2] = 0; 
+					g_pos_info.D0 = 0;
+					g_pos_info.D1 = 0;
+					g_pos_info.tag_position_valid_flag = POS_INVALID;			
 					DBG_ERR_PRINT("4-3 TAG_RECV_SLOT_ALLOCATION FAIL!\r\n");
 					tag_state = TAG_WAITE_ACTIVATION;
 				}

@@ -292,9 +292,10 @@ extern  void DWM1000_check(void);
 extern  void meas_distance(void);
 extern  ret_t major_anchor(void);
 extern  ret_t sub_anchor(void);
+extern  void reset_position_default_para(void);
 extern  void save_device_para(void);
 extern  void get_device_para(void);
-extern  void show_device_para(void);
+extern  void show_position_para(void);
 u32 calc_tx_power_config_value(u8* ptr);
 float calc_tx_power_config_value_to_db(u32 value);
 

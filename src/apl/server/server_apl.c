@@ -9,12 +9,14 @@
 #include "fml/sshell/sshell_fml.h"
 #include "fml/uart/uart_fml.h"
 #include "drv/rngbuf/rngbuf.h"
+#include "drv/platform/delay/delay.h"
 
 
 Server_Data server_Data;
 Pos_count Pos_time;
 
 static u8 g_mqtt_print_tmpbuf[1024];
+static u8 g_mqtt_print_buf[1300];
 
 
 extern UPDATE_HANDLE update_handle_g;
@@ -294,42 +296,89 @@ U8 upload_hpr_update_feedback_to_server(int state)
 
 U8 upload_hpr_cmd_log_to_server(void)
 {
-	cJSON *root = NULL;
-	cJSON *data_obj = NULL;
-	S32 len = 0;	
-	extern RNGBUF_t * print_rngbuf;	
-	U32 time;
-	S8 buf[15] = {0};
+    cJSON *root = NULL;
+    cJSON *data_obj = NULL;
+		S32 len, data_len;	
+		static S32 last_remaining_len = 0;	
+		S32 i;	
+		static U8 *p_tmep;
+		extern RNGBUF_t * print_rngbuf;	
+		U32 time;
+		S8 buf[15] = {0};
+	 
+		time = get_cur_time() / 1000000;
 
-	time = get_cur_time() / 1000000;
+		 if(uart_get_dbg_outmode() == DBG_OUT_MQTT)
+		 {		 
+			 if(!rng_is_empty(print_rngbuf))
+			 {	 		
+					len = rng_get_buf(print_rngbuf, (char*)g_mqtt_print_tmpbuf, 1024);
+					if(g_mqtt_print_tmpbuf[len-2] != '\r' && g_mqtt_print_tmpbuf[len-1] != '\n')
+					{
+						for(i=(len-1); i >= 1; i--)
+						{
+							if(g_mqtt_print_tmpbuf[i-1] == '\r' && g_mqtt_print_tmpbuf[i] == '\n')
+							{							
+								data_len = i+1;
+								p_tmep = g_mqtt_print_buf + last_remaining_len;		
+								memcpy(p_tmep, g_mqtt_print_tmpbuf, data_len);
+								data_len += last_remaining_len;
+								if(data_len >= 1300)
+								{
+									data_len = 1300 - 1;
+								}
 
-	if(uart_get_dbg_outmode() == DBG_OUT_MQTT)
-	{		 
-		if(!rng_is_empty(print_rngbuf))
-		{	 		
-			len = rng_get_buf(print_rngbuf, (char*)g_mqtt_print_tmpbuf, 1024);
-			g_mqtt_print_tmpbuf[len] = 0;
+								g_mqtt_print_buf[data_len] = 0;
+
+								last_remaining_len = len - i - 1;
+								break;																				
+							}
+						}
+					}
+					else
+					{
+							p_tmep = g_mqtt_print_buf + last_remaining_len;		
+							memcpy(p_tmep, g_mqtt_print_tmpbuf, len);
+							data_len = last_remaining_len + len;
+							if(data_len >= 1300)
+							{
+								data_len = 1300- 1;
+							}						
+							g_mqtt_print_buf[data_len] = 0;
+							last_remaining_len = 0;
+					}
+						
+					
+			 }
+			 else
+			 {
+					return TRUE;
+			 }
+
+	    root = cJSON_CreateObject();
+
+	 		sprintf(buf, "%u", time);
+			cJSON_AddStringToObject(root, "time", buf);
+			cJSON_AddStringToObject(root, "log", g_mqtt_print_buf);	
+	                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
+	    /* Print to text */
+	    if(print_preallocated(&iotCmdDev, root) != 0)
+	    {
+	        cJSON_Delete(root);
+	        //ERR_PRINT(("send Set Position Cmd Feedback Error!!!!\r\n"));
+	        return FALSE;
+	    }
+	    cJSON_Delete(root);
+
+			if(last_remaining_len > 0)
+				memcpy(g_mqtt_print_buf, &g_mqtt_print_tmpbuf[i+1], last_remaining_len);
+
 		}
-	}
 
-	root = cJSON_CreateObject();
-
-	sprintf(buf, "%u", time);
-	cJSON_AddStringToObject(root, "time", buf);
-	cJSON_AddStringToObject(root, "log", g_mqtt_print_tmpbuf);	
-	                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   
-	/* Print to text */
-	if(print_preallocated(&iotCmdDev, root) != 0)
-	{
-	cJSON_Delete(root);
-	GLOBAL_MEMSET(g_mqtt_print_tmpbuf,0,sizeof(g_mqtt_print_tmpbuf));
-	return FALSE;
-	}
-	GLOBAL_MEMSET(g_mqtt_print_tmpbuf,0,sizeof(g_mqtt_print_tmpbuf));
-	cJSON_Delete(root);
 
     return TRUE;
 }
+
 
 
 

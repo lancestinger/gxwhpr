@@ -88,40 +88,46 @@ static const U8 key_up[3] = {0x1B, 0x5B, 0x41};
 static const U8 key_down[3] = {0x1B, 0x5B, 0x42};
 static const CHAR_T sshell_help_info1[] = {
 	"***Command***                     ***Detail***\r\n"
-	"  sysinfo                       - show System info\r\n"
-	"  device_para_info              - show UWB para info\r\n"
-	"  dbg on/off                    - debug option\r\n"
-	"      position                  - enable or disable show Position info\r\n"
-	"      server                    - enable or disable show Server info\r\n"
-	"      mqtt                      - enable or disable show MQTT info\r\n"
-	"      ntrip                     - enable or disable show Ntrip info\r\n"
-	"      socket                    - enable or disable show Socket info\r\n"
-	"      all                       - enable or disable show Position and Server info\r\n"
-	"  update                        - update arm firmware\r\n"
-	"  disconnect                    - disconnect with MQTT server\r\n"
-	"  sub                           - resubscribe\r\n"
-	"  open ranging                  - open UWB tag ranging\r\n"
-	"  close ranging                 - close UWB tag ranging\r\n"
-	"  open det_sig                  - open detection signal\r\n"
-	"  close det_sig                 - close detection signal\r\n"
-	"  open intf_sig                 - open interference signal\r\n"
-	"  close intf_sig                - close interference signal\r\n"
-	"  start tx_power                - start tx_power\r\n"
-	"  stop tx_power                 - stop tx_power\r\n"
-	"  start uwb                     - start uwb thread\r\n"
-	"  stop uwb                      - stop uwb thread\r\n"
-
+	"  sysinfo                       -show sysinfo\r\n"
+	"  dbg on/off                    -debug option\r\n"
+	"    position                    -debug position\r\n"	
+	"    position_warn               -debug position_warn\r\n"	
+	"    server                      -debug mqtt server\r\n"
+	"    mqtt                        -enable or disable show MQTT info\r\n"
+	"    ntrip                       -enable or disable show Ntrip info\r\n"
+	"    socket                      -enable or disable show Socket info\r\n"
+	"    all                       -enable or disable show Position and Server info\r\n"		
+	"  update                        -update arm firmware\r\n"
+	"  format                        -format ext spi flash\r\n"
+	"  disconnect                    -disconnect mqtt connect\r\n"
+	"  sub                           -subscribe\r\n"
+	"  open/close ranging            -open/close uwb ranging\r\n"
+	"  open/close det_sig            -open/close detection uwb signal\r\n"
+	"  open/close det_sig            -open/close detection uwb signal\r\n"
+	"  open/close intf_sig           -open/close send uwb signal\r\n"
+	"  start/stop uwb                -start/stop uwb tx and rx\r\n"
+	"  start tx_power xxx xxx xxx xxx -start auto choose tx power\r\n"
+	"  stop tx_power                 -stop auto choose tx power\r\n"	
+	"  show                          -show option\r\n"
+	"    ip                          -show ip info\r\n"	
+	"    position                    -show uwb position info\r\n"
+	
 };
 
 static const CHAR_T sshell_help_info2[] =
 {
-	"  set                           - set option\r\n"
-	"      ip xxx.xxx.xxx.xxx        - set ip data\r\n"
-	"      mac xxx.xxx.xxx.xxx       - set mac address\r\n"
-    "      mask xxx.xxx.xxx.xxx      - set mask address\r\n"
-    "      gate xxx.xxx.xxx.xxx      - set gateway address\r\n"
-	"  show                          - show option\r\n"
-	"      ip                        - show ip info\r\n"
+	"  set                       -set option\r\n"
+	"    ip xxx.xxx.xxx.xxx      -set ip data\r\n"
+  "    mask xxx.xxx.xxx.xxx    -set mask address\r\n"    
+  "    gate xxx.xxx.xxx.xxx    -set gateway address\r\n"
+	"    device_type xxx         -set device_type data\r\n"
+	"    ant_tx_delay xxx        -set ant_tx_delay data\r\n"
+	"    ant_rx_delay xxx        -set ant_rx_delay data\r\n"
+	"    tag_id xxx              -set tag_id data\r\n"
+	"    position xxx xxx xxx    -set position latitude longitude height\r\n"
+	"    tag_h xxx               -set tag_h data\r\n"
+	"    tx_power xxx            -set tx_power data\r\n"
+	"    anchor_idle_num xxx     -set anchor_idle_num data\r\n"		
 };
 
 
@@ -130,7 +136,6 @@ static const CHAR_T sshell_help_info4[] =
 	"  save                          - save para in flash\r\n"
 	"  reset                         - reset para to default and save\r\n"
 	"  reboot                        - reboot system\r\n"
-	"  format                        - erase external flash\r\n"
 	"  Ctrl+C                        - clear all period info\r\n"
 	"  clear/c                       - clear screen\r\n"
 	"  help, ?                       - display this help\r\n"
@@ -649,6 +654,10 @@ static BOOL _sshell_excute_show_cmd(U8* ptr)
 		//GLOBAL_PRINT((" MAC ADDR:\t%s\r\n", mac_ntoa(eth0_mac_addr)));
 		ret = TRUE;
 	}
+	else if(!GLOBAL_STRCASECMP(ptr, "position"))
+	{
+		show_position_para();
+	}
 
 	return ret;
 }
@@ -994,11 +1003,6 @@ static BOOL _sshell_excute_debug_cmd(U8* ptr)
 	{
 		SYSINFO_PRINT();
 		return TRUE;
-	}
-	if(GLOBAL_STRCASECMP(ptr, "device_para_info") == 0)
-	{
-		show_device_para();
-		return TRUE;
 	}	
 	else if(GLOBAL_STRCASECMP(ptr, "clear") == 0)
 	{
@@ -1012,7 +1016,7 @@ static BOOL _sshell_excute_debug_cmd(U8* ptr)
 	}
   else if(!GLOBAL_STRCASECMP(ptr, "disconnect"))
   {
-    WARN_PRINT(("disconnect mqtt!!!\r\n"));
+    WARN_PRINT(("disconnect mqtt connect!!!\r\n"));
     mqttDisconnect(&iotDev);
     return TRUE;
   }
@@ -1024,6 +1028,7 @@ static BOOL _sshell_excute_debug_cmd(U8* ptr)
 	else if(GLOBAL_STRCASECMP(ptr, "reset") == 0)
 	{
 		sys_para_reset();
+		reset_position_default_para();
     sys_para_save();     //added by sunj 2019-10-18 14:31
     GLOBAL_PRINT(("all parameters have been reset and saved\r\n"));
 		return TRUE;
@@ -1163,6 +1168,7 @@ static BOOL _sshell_excute_debug_cmd(U8* ptr)
 	else if(!GLOBAL_STRCASECMP(ptr, "save"))
 	{
 		sys_para_save();
+		save_device_para();
 		return TRUE;
 	}
 	else if(!GLOBAL_STRCASECMP(ptr, "update"))
