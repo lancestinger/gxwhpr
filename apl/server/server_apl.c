@@ -1000,7 +1000,7 @@ static void _Server_thread(void * arg)
 		if(SERVER_RTK==POS_VALUE_VALID||g_pos_info.tag_position_valid_flag==POS_VALUE_VALID)
 		{
 			//判断定位有效状态，按RTK>UWB>GNSS优先级进行上报
-			if(SERVER_RTK==POS_VALUE_VALID && NMEA_Data_ptr.RTK_mode >= 4)//RTK数据有效
+			if(SERVER_RTK==POS_VALUE_VALID && NMEA_Data_ptr.RTK_mode == 4)//RTK数据有效
 			{		
 				server_Data.latitude  = NMEA_Data_ptr.lat;
 				server_Data.longitude = NMEA_Data_ptr.lon;
@@ -1009,7 +1009,7 @@ static void _Server_thread(void * arg)
 				GGA_DATA_READY = 0;
 				SERVER_RTK = POS_VALUE_INVALID;
 			}
-			else if(g_pos_info.tag_position_valid_flag==POS_VALUE_VALID && NMEA_Data_ptr.RTK_mode < 4)//RTK无效且UWB数据有效
+			else if(g_pos_info.tag_position_valid_flag==POS_VALUE_VALID && NMEA_Data_ptr.RTK_mode != 4)//RTK无效且UWB数据有效
 			{
 				server_Data.latitude  = g_pos_info.tag_position[0];
 				server_Data.longitude = g_pos_info.tag_position[1];
@@ -1017,7 +1017,7 @@ static void _Server_thread(void * arg)
 				server_Data.mode = 7;
 				g_pos_info.tag_position_valid_flag = POS_VALUE_INVALID;
 			}
-			else//RTK与UWB均无效且GNSS有效
+			else if(g_pos_info.tag_position_valid_flag==POS_INVALID && NMEA_Data_ptr.RTK_mode != 4)//RTK与UWB均无效且GNSS有效
 			{	
 				server_Data.latitude  = NMEA_Data_ptr.lat;
 				server_Data.longitude = NMEA_Data_ptr.lon;

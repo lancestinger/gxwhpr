@@ -242,12 +242,12 @@ void sys_para_load(void)
 		GLOBAL_HEX(main_handle_g.cfg.crc);
 		ERR_PRINT(("数据库校验错误，恢复缺省数据!\r\n"));
 		sys_para_reset();
-		sys_reset_para_save();
+		sys_para_save();
 	}
 	else
 	{
 		sys_para_reset();
-		sys_reset_para_save();
+		sys_para_save();
 		NOTE_PRINT(("系统参数加载成功!!!!\r\n"));
 	}
 

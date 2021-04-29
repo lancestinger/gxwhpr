@@ -1463,16 +1463,16 @@ ret_t tag_wait_activation(void)
 					ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, TAG_WAIT_TIMEOUT);
 					if(ret != RET_SUCCESS)
 					{ 
-						//if(ret == RECV_TIME_OUT)
-						//{
-							//main_anchor_activ_fail_cnt++;
-							//if(main_anchor_activ_fail_cnt >= 25) //25*TAG_WAIT_TIMEOUT
-							//{
-							//	g_pos_info.tag_position_valid_flag = POS_INVALID;	
-							//	have_anchor_flag = 0;
-							//	DBG_PRINT("tag_position_valid_flag = POS_INVALID");
-							//}
-						//}
+						if(ret == RECV_TIME_OUT)
+						{
+							main_anchor_activ_fail_cnt++;
+							if(main_anchor_activ_fail_cnt >= 25) //25*TAG_WAIT_TIMEOUT
+							{
+								g_pos_info.tag_position_valid_flag = POS_INVALID;	
+								have_anchor_flag = 0;
+								DBG_PRINT("tag_position_valid_flag = POS_INVALID");
+							}
+						}
 						DBG_PRINT("main anchor actived failed0[%1d],\r\n",ret);
 						continue;
 					}						

@@ -151,6 +151,7 @@ static int connectMqttServer(IOT_Device_t* iotdev)
 	/*ÒÅÖöÉèÖÃ*/
 	data.willFlag = 1;
 	data.will.topicName.cstring = iotdev->pubTopicName;
+	data.will.qos = 1;
 	data.will.message.cstring = "{\"cmd\":400,\"msg\":\"offline\"}";
     
 	if(iotdev->mqttSock <= 0)
