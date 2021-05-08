@@ -199,32 +199,19 @@ u8 g_get_rx_timestamp_flag = 0;
 dwt_auto_tx_power_config_t g_dwt_auto_tx_power_config;
 key_vaule_t g_key_vaule;
 
-
-
 uint64 g_tx_timestamp = 0;
 uint64 g_rx_timestamp = 0;
 
-
-
-
-
-
-
-
 static float g_uwb_rg_ssi;
-
-
 
 device_config_t			g_device_config;
 locate_net_info_t		g_locate_net_info;
 pos_info_t					g_pos_info;
 
-
-
-
-
 extern volatile u16 g_timer_cnt_100ms;	
 
+static u8 g_reset_filter = 1;
+u8 g_open_filter_flag = 1;
 
 
 /******************************************************************************
@@ -391,8 +378,10 @@ void show_position_para(void)
 		GLOBAL_PRINT(("anchor_id: %d\r\n", g_device_config.anchor_id));	
 		GLOBAL_PRINT(("on_left: %d\r\n", g_device_config.on_left));
 		GLOBAL_PRINT(("anchor_h: %lf\r\n", g_device_config.anchor_h));
-		GLOBAL_PRINT(("anchor_idle_num: %d\r\n", g_device_config.anchor_idle_num));		
+		GLOBAL_PRINT(("anchor_idle_num: %d\r\n", g_device_config.anchor_idle_num));	
+		GLOBAL_PRINT(("t2wall_dist: %d\r\n", g_device_config.t2wall_actual_dist));	
 		GLOBAL_PRINT(("position:latitude %lf, longitude %lf, height %lf\r\n", g_device_config.position[0], g_device_config.position[1], g_device_config.position[2]));	
+		GLOBAL_PRINT(("ref_position:latitude %lf, longitude %lf, height %lf\r\n", g_device_config.ref_position[0], g_device_config.ref_position[1], g_device_config.ref_position[2]));
 	}
 
 	GLOBAL_PRINT(("ant_tx_delay: %d\r\n", g_device_config.ant_tx_delay));
@@ -1470,6 +1459,7 @@ ret_t tag_wait_activation(void)
 							{
 								g_pos_info.tag_position_valid_flag = POS_INVALID;	
 								have_anchor_flag = 0;
+								g_reset_filter = 1;
 								DBG_PRINT("tag_position_valid_flag = POS_INVALID");
 							}
 						}
@@ -2762,8 +2752,28 @@ void test_position(void)
 #endif
 
 
-
-
+double calc_dist(double a_lat, double a_long, double a_hight, double b_lat, double b_long, double b_hight){
+	ECEF pcc;
+	WGS center, pcg;
+	ENU pct, pct2;
+	double dist;
+	
+	
+	center.latitude = a_lat;
+	center.longitude = a_long;
+	center.height = a_hight;								
+	pcg.latitude = b_lat;
+	pcg.longitude = b_long;
+	pcg.height = b_hight;		
+	WGSToECEF(&pcg, &pcc);									
+	ECEFToENU(&pcc, &center, &pct); //转换为东北天坐标
+	
+	
+	dist = sqrt(pow(pct.easting ,2) + pow(pct.northing,2) + pow(pct.upping,2));
+	
+	return dist;
+	
+}
 
 ret_t tag_ranging(u8 tag_slot) 
 {	   			
@@ -3009,8 +3019,10 @@ ret_t tag_ranging(u8 tag_slot)
 		            uint64 tof_dtu;
 								double tof;             //飞行时间
 								double distance,dist;  //理论距离 ，估算距离
+								double t2ref_dist;
 								double d0,d1;
 								double clua_x_y_z[4];
+								double out_xyz[3];
 								s32 dis0, dis1;
 								u8 cla_flag=0;
 								PECEF pcc;
@@ -3170,7 +3182,17 @@ ret_t tag_ranging(u8 tag_slot)
 									pct->easting = clua_x_y_z[0];
 									pct->northing = clua_x_y_z[1];
 									pct->upping = clua_x_y_z[2];
-									ENUToECEF(pcc, center, pct);
+									ENUToECEF(pcc, center, pct);							
+									
+									if(g_open_filter_flag == 1)
+									{
+										Filter(pcc->x, pcc->y, pcc->z, out_xyz, get_cur_time(), g_reset_filter);
+										g_reset_filter = 0;
+										pcc->x = out_xyz[0];
+										pcc->y = out_xyz[1];
+										pcc->z = out_xyz[2];
+									}
+									
 									ECEFToWGS(pcg, pcc);
 									
 							//		pcg->latitude = KalmanFilter(pcg->latitude,g_device_config.kalman_q,g_device_config.kalman_r,0); //卡尔曼滤波
@@ -3180,7 +3202,16 @@ ret_t tag_ranging(u8 tag_slot)
 									g_pos_info.tag_position[0] = pcg->latitude;
 									g_pos_info.tag_position[1] = pcg->longitude;
 									g_pos_info.tag_position[2] = pcg->height;
-									g_pos_info.tag_position_valid_flag = POS_VALID;
+									g_pos_info.t2wall_dist = clua_x_y_z[3];	
+									g_pos_info.t2ref_dist = calc_dist(pcg->latitude, pcg->longitude, pcg->height, g_device_config.ref_position[0],g_device_config.ref_position[1],g_device_config.ref_position[2]);
+									g_pos_info.rssi = g_uwb_rg_ssi;
+									g_pos_info.tag_position_valid_flag = POS_VALID;	
+
+									if(fabs(g_pos_info.t2wall_dist - g_device_config.t2wall_actual_dist) > 3.0)
+									{
+										DBG_WARNING_PRINT("t2wall_dist error is too big\r\n");
+									}
+										
 	
 									DBG_PRINT("6. main_%d dis: %d cm,sub_%d dis: %d cm, tag pos latitude: %lf, longitude: %lf, height: %lf m\r\n", g_locate_net_info.main_anchor_id,dis0, g_locate_net_info.sub_anchor_id,dis1, g_pos_info.tag_position[0], g_pos_info.tag_position[1], g_pos_info.tag_position[2]);							
 								}
@@ -3191,9 +3222,9 @@ ret_t tag_ranging(u8 tag_slot)
 								
 								time_end = get_cur_time();
 								nus = get_count_time(time_start, time_end);		
+								
 								position_interval = get_count_time(g_last_tag_position_time, get_cur_time());	
 								g_last_tag_position_time = get_cur_time();
-
 								
 								DBG_PRINT("tag postion calc take time : %d us , pos_intval : %d us\r\n", nus1,position_interval);
 

@@ -163,6 +163,8 @@ typedef struct
 		u8 chan;												//dw1000通道
 		u32 tx_power;												//发射功率增益
 		double position[3]; 								//基站坐标x,y,z
+		double ref_position[3]; 						//参考点坐标x,y,z
+		double t2wall_actual_dist;					//接受机到隧道墙壁的实际距离
 		float tag_h; 											//标签相对地面的垂直高度
 		float anchor_h; 											//基站相对地面的垂直高度
 
@@ -179,6 +181,9 @@ typedef struct
 		u8 	tag_state; 											//0.等待被激活状态、1.注册状态、2.接受时隙分配状态、3.测距状态、4.空闲状态	
 		tag_pos_state_t 	tag_position_valid_flag; //定位有效状态
 		double tag_position[3]; 								//标签坐标x,y,z
+		double t2ref_dist;									//接受机到参考点距离
+		double t2wall_dist;									//接受机到隧道墙壁的距离
+		double rssi;												//接受信号强度
 		double D0;                                          //测距信息d0
 		double D1;                                          //测距信息d1
 		u16 main_anchor_id; 								//主基站id （0-0xffff）		
@@ -225,6 +230,7 @@ extern pos_info_t					  g_pos_info;
 extern u8 g_ranging_flag;
 extern u8 g_detection_signal_flag;
 extern u8 g_interference_signal_flag;
+extern u8 g_open_filter_flag;
 extern dwt_auto_tx_power_config_t g_dwt_auto_tx_power_config;
 extern key_vaule_t g_key_vaule;
 

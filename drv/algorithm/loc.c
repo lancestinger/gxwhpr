@@ -6,8 +6,70 @@
 //#include "usart.h"
 #include "loc.h"
 #include "log.h"
+#include "drv/platform/delay/delay.h"
 
 
+void Filter(const double x,const double y, const double z, double *out_xyz, u32 time, u8 rest_flag)
+{
+	static u32 cnt = 0;
+	static u32 last_first_time = 0;
+	static u32 last_second_time = 0;
+	static double last_first_x, last_first_y, last_first_z;
+	static double last_second_x, last_second_y, last_second_z;
+	double now_x, now_y, now_z;
+	double speed_x, speed_y, speed_z;
+	double ns0, ns1;
+	
+	if(rest_flag == 1)
+	{
+		cnt = 0;
+	}
+	
+	if(cnt == 0)
+	{
+		cnt++;
+		last_first_x = x;
+		last_first_y = y;
+		last_first_z = z;
+		last_first_time = time;
+		out_xyz[0] = x;
+		out_xyz[1] = y;
+		out_xyz[2] = z;
+	}
+	else if(cnt == 1)
+	{
+		cnt++;
+		last_second_x = x;
+		last_second_y = y;
+		last_second_z = z;	
+		last_second_time = time;
+		out_xyz[0] = x;
+		out_xyz[1] = y;
+		out_xyz[2] = z;	
+	}
+	else
+	{		
+		ns0 = get_count_time(last_first_time, last_second_time) / 1000000.0;
+		ns1 = get_count_time(last_second_time, time) / 1000000.0;
+		speed_x = (last_second_x - last_first_x) / ns0;
+		speed_y = (last_second_y - last_first_y) / ns0;
+		speed_z = (last_second_z - last_first_z) / ns0;
+		now_x = (last_second_x + speed_x * ns1)*0.5 + x*0.5;
+		now_y = (last_second_y + speed_y * ns1)*0.5 + y*0.5;
+		now_z = (last_second_z + speed_z * ns1)*0.5 + z*0.5;
+		
+		last_first_x = last_second_x;
+		last_first_y = last_second_y;
+		last_first_z = last_second_z;
+		last_second_x = now_x;
+		last_second_y = now_y;
+		last_second_z = now_z;
+		
+		out_xyz[0] = now_x;
+		out_xyz[1] = now_y;
+		out_xyz[2] = now_z;	
+	}
+}
 
 
 void Rotate2(double x1, double y1, double alpha, double* x2, double* y2)
@@ -281,6 +343,7 @@ int CalcPosition_enu(double A_r,double B_x,double B_y,double B_z,double B_r,doub
 	double sin, cos;
 	double tmp;
 	double tmp_x,tmp_y,tmp_z;
+	double t2wall_dist; //接受机到隧道墙壁的距离
 
 	
 
@@ -323,11 +386,13 @@ int CalcPosition_enu(double A_r,double B_x,double B_y,double B_z,double B_r,doub
 			
 	
 	y = sqrt(tmp);
+	t2wall_dist = y;
 	if(anchor_on_left == 1)
 	{
 		y = 0 - y;
 	}
 
+	
 
 end:
 	//3.计算基于东北天enu的坐标
@@ -346,6 +411,7 @@ end:
 	point_out[0] = x;
 	point_out[1] = y;
 	point_out[2] = z;
+	point_out[2] = t2wall_dist;
 
 	return 0;
 

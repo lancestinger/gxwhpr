@@ -105,6 +105,7 @@ static const CHAR_T sshell_help_info1[] = {
 	"  open/close det_sig            -open/close detection uwb signal\r\n"
 	"  open/close det_sig            -open/close detection uwb signal\r\n"
 	"  open/close intf_sig           -open/close send uwb signal\r\n"
+	"  open/close filter             -open/close filter\r\n"
 	"  start/stop uwb                -start/stop uwb tx and rx\r\n"
 	"  start tx_power xxx xxx xxx xxx -start auto choose tx power\r\n"
 	"  stop tx_power                 -stop auto choose tx power\r\n"	
@@ -125,7 +126,10 @@ static const CHAR_T sshell_help_info2[] =
 	"    ant_rx_delay xxx        -set ant_rx_delay data\r\n"
 	"    tag_id xxx              -set tag_id data\r\n"
 	"    position xxx xxx xxx    -set position latitude longitude height\r\n"
-	"    tag_h xxx               -set tag_h data\r\n"
+	"    ref_position xxx xxx xxx -set ref_position latitude longitude height\r\n"
+	"    t2wall_d xxx            -set t2wall_d data\r\n"	
+	"    anchor_h xxx            -set anchor_h data\r\n"
+	"    on_left xxx             -set on_left data\r\n"
 	"    tx_power xxx            -set tx_power data\r\n"
 	"    anchor_idle_num xxx     -set anchor_idle_num data\r\n"		
 };
@@ -498,6 +502,25 @@ static BOOL _sshell_excute_set_cmd(U8* ptr)
 		save_device_para();
 		ret = TRUE;
 	}
+	else if(!GLOBAL_STRNCASECMP(ptr, "ref_position ", 13))
+	{
+		char *p_end;
+
+		g_device_config.ref_position[0] = GLOBAL_STRTOD(ptr+13, &p_end);
+		g_device_config.ref_position[1] = GLOBAL_STRTOD(p_end, &p_end);
+		g_device_config.ref_position[2] = GLOBAL_STRTOD(p_end, &p_end);
+
+		save_device_para();
+		ret = TRUE;
+	}
+	else if(!GLOBAL_STRNCASECMP(ptr, "t2wall_d ", 9))
+	{
+		char *p_end;
+		g_device_config.t2wall_actual_dist = GLOBAL_STRTOD(ptr+9, &p_end);
+
+		save_device_para();
+		ret = TRUE;
+	}		
 	else if(!GLOBAL_STRNCASECMP(ptr, "tag_h ", 6))
 	{
 		char *p_end;
@@ -1060,6 +1083,18 @@ static BOOL _sshell_excute_debug_cmd(U8* ptr)
 			return TRUE;
 		}
 	}
+	else if(!GLOBAL_STRNCASECMP(ptr, "open filter", 11))
+	{	
+		g_open_filter_flag = 1;
+			
+		return TRUE;
+	}	
+	else if(!GLOBAL_STRNCASECMP(ptr, "close filter", 12))
+	{		
+		g_open_filter_flag = 0;
+			
+		return TRUE;
+	}	
 	else if(!GLOBAL_STRNCASECMP(ptr, "open ranging", 12))
 	{	
 		g_ranging_flag = 1;

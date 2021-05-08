@@ -9,7 +9,7 @@
 int CalcPosition_enu(double A_r,double B_x,double B_y,double B_z,double B_r,double tag_h, u8 anchor_on_left, double *point_out);
 void positive_rotate3(double x1, double y1, double z1, double x2, double y2, double z2,double* x, double* y, double* z);
 void negative_rotate3(double x1, double y1, double z1, double x2, double y2, double z2,double* x, double* y, double* z);
-
+void Filter(const double x,const double y, const double z, double *out_xyz, u32 time, u8 rest_flag);
 
 
  u8 PersonPosition_xy(double A_x,double A_y,double A_r,u16 A_en,

@@ -985,13 +985,16 @@ static void _Server_thread(void * arg)
 		{
 			//取UWB定位数值与时间
 			Pos_time.UWB_TIME = osKernelGetTickCount();		
-			DBG_SERVER_Print("\r\nHPR_OUTPUT[UWB],%d,%lf,%lf,%lf,%d,%lf,%d,%lf,[VALID],%d\r\n\r\n",\
+			DBG_SERVER_Print("\r\nHPR_OUTPUT[UWB],%d,%lf,%lf,%lf,%d,%lf,%d,%lf,%lf,%lf,%lf,[VALID],%d\r\n\r\n",\
 							Pos_time.UWB_TIME,\
 							g_pos_info.tag_position[0],g_pos_info.tag_position[1],g_pos_info.tag_position[2],\
 							g_pos_info.main_anchor_id,\
 							g_pos_info.D0,\
 							g_pos_info.sub_anchor_id,\
 							g_pos_info.D1,\
+							g_pos_info.t2ref_dist,\
+							g_pos_info.t2wall_dist,\
+							g_pos_info.rssi,\
 							g_pos_info.tag_position_valid_flag);
 			
 			g_pos_info.tag_position_valid_flag = POS_VALUE_VALID;
