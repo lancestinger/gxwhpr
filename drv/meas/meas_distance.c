@@ -386,6 +386,40 @@ void get_device_para(void)
 void show_position_para(void)
 {
 
+
+
+#if 1
+	GLOBAL_PRINT(("device_type: %d\r\n", g_device_config.device_type)); 
+	if(g_device_config.device_type == TAG) 
+	{  
+			GLOBAL_PRINT(("tag_id: %d\r\n", g_device_config.tag_id));  
+			GLOBAL_PRINT(("tag_h: %lf\r\n", g_device_config.tag_h));  
+			GLOBAL_PRINT(("t2wall_dist: %d\r\n", g_device_config.t2wall_actual_dist));   
+			GLOBAL_PRINT(("ref_position:latitude %lf, longitude %lf, height %lf\r\n", \
+				g_device_config.ref_position[0], \
+				g_device_config.ref_position[1], \
+				g_device_config.ref_position[2]));   
+	} 
+	else if(g_device_config.device_type == ANCHOR) 
+	{  
+		GLOBAL_PRINT(("anchor_id: %d\r\n", g_device_config.anchor_id));   
+		GLOBAL_PRINT(("on_left: %d\r\n", g_device_config.on_left));  
+		GLOBAL_PRINT(("anchor_h: %lf\r\n", g_device_config.anchor_h));  
+		GLOBAL_PRINT(("anchor_idle_num: %d\r\n", g_device_config.anchor_idle_num));   
+		GLOBAL_PRINT(("position:latitude %lf, longitude %lf, height %lf\r\n", \
+			g_device_config.position[0], \
+			g_device_config.position[1], \
+			g_device_config.position[2]));    
+	} 
+	GLOBAL_PRINT(("ant_tx_delay: %d\r\n", g_device_config.ant_tx_delay)); 
+	GLOBAL_PRINT(("ant_rx_delay: %d\r\n", g_device_config.ant_rx_delay));  
+	GLOBAL_PRINT(("tx_power: %2.1f db\r\n", calc_tx_power_config_value_to_db(g_device_config.tx_power)));  
+	GLOBAL_PRINT(("dyn_slot_long: %d\r\n", g_device_config.dyn_slot_long)); 
+	GLOBAL_PRINT(("ranging_slot_long: %d\r\n", g_device_config.ranging_slot_long));  
+	GLOBAL_PRINT(("chan: %d\r\n", g_device_config.chan)); 
+
+
+#else
 	GLOBAL_PRINT(("device_type: %d\r\n", g_device_config.device_type));
 
 	if(g_device_config.device_type == TAG)
@@ -410,6 +444,8 @@ void show_position_para(void)
 	GLOBAL_PRINT(("dyn_slot_long: %d\r\n", g_device_config.dyn_slot_long));
 	GLOBAL_PRINT(("ranging_slot_long: %d\r\n", g_device_config.ranging_slot_long));	
 	GLOBAL_PRINT(("chan: %d\r\n", g_device_config.chan));	
+
+#endif
 }
 
 
