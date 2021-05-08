@@ -336,7 +336,7 @@ void negative_rotate3(double x1, double y1, double z1, double x2, double y2, dou
 	
 }
 
-
+static double last_t2wall_dist = 6;
 
 int CalcPosition_enu(double A_r,double B_x,double B_y,double B_z,double B_r,double tag_h, u8 anchor_on_left, double *point_out)
 {
@@ -351,7 +351,6 @@ int CalcPosition_enu(double A_r,double B_x,double B_y,double B_z,double B_r,doub
 
 	/* 0.以两基站的连线为横坐标轴，A基站作为原点 */	
 	Dist_12 = sqrt(pow(B_x,2) + pow(B_y,2) + pow(B_z,2));
-	DBG_WARNING_PRINT("triangle dist: %lf, %lf, %lf m\r\n", Dist_12, A_r, B_r);
 	
 	x1 = 0;
 	y1 = 0;
@@ -360,21 +359,41 @@ int CalcPosition_enu(double A_r,double B_x,double B_y,double B_z,double B_r,doub
 	y2 = 0;	
 	r2 = B_r;	
 
-	if(A_r > (Dist_12 + 50) || B_r > (Dist_12 + 50))
+	if(A_r > (Dist_12 + 20) || B_r > (Dist_12 + 20))
 	{
-		DBG_WARNING_PRINT("wrong distance, %lf, %lf m\r\n", A_r, B_r);
+		DBG_WARNING_PRINT("1.wrong distance, triangle dist: %lf, %lf, %lf m\r\n", Dist_12, A_r, B_r);
 		return -1;
 	}	
-
-	if((A_r + B_r) <= Dist_12 || (A_r + Dist_12) <= B_r || (B_r + Dist_12) <= A_r) 
-	{
-		DBG_WARNING_PRINT("Invalid triangle\r\n");
-		return -2;
-	}
-
+	
 	//1.求在x轴上的映射x0
 	y0 = 0;
 	x0 = (pow(x2,2) - pow(r2,2) + pow(r1,2) ) / (2 * x2);
+
+	if((A_r + B_r) <= Dist_12 || (A_r + Dist_12) <= B_r || (B_r + Dist_12) <= A_r) 
+	{
+		if((Dist_12 - (A_r + B_r)) > 0.6 || (B_r - (A_r + Dist_12)) > 0.6 || (A_r - (B_r + Dist_12)) > 0.6)
+		{
+			DBG_WARNING_PRINT("2.wrong distance, triangle dist: %lf, %lf, %lf m\r\n", Dist_12, A_r, B_r);
+			return -2;
+		}
+		
+		DBG_WARNING_PRINT("Invalid triangle,triangle dist: %lf, %lf, %lf m\r\n", Dist_12, A_r, B_r);
+			
+		x = x0;
+		y = last_t2wall_dist; //隧道墙壁到马路中间的长度
+		if(anchor_on_left == 1)
+		{
+			y = 0 - y;
+		}		
+		z = tag_h;
+		t2wall_dist = last_t2wall_dist;		
+		goto end;
+	}
+	else
+	{
+		DBG_WARNING_PRINT("triangle dist: %lf, %lf, %lf m\r\n", Dist_12, A_r, B_r);
+	}
+
 
 	//2.求x,y坐标
 	x = x0;
@@ -382,8 +401,17 @@ int CalcPosition_enu(double A_r,double B_x,double B_y,double B_z,double B_r,doub
 	tmp = pow(r1,2) - pow(x,2) - pow(z,2);
 	if(tmp < 0)
 	{
-		DBG_WARNING_PRINT("Invalid calc value: %lf\r\n", tmp);
-		return -4;
+		DBG_WARNING_PRINT("Invalid calc value: %lf\r\n", tmp);		
+		x = x0;
+		y = last_t2wall_dist; //隧道墙壁到马路中间的长度
+		if(anchor_on_left == 1)
+		{
+			y = 0 - y;
+		}		
+		z = tag_h;
+		t2wall_dist = last_t2wall_dist;		
+
+		goto end;
 	}
 			
 	
@@ -406,7 +434,7 @@ end:
 	if(isnan(x) || isnan(y) || isnan(z))
 	{
 		DBG_WARNING_PRINT("Invalid calc value\r\n");
-		return -5;
+		return -3;
 	}
 
 	//实际坐标
@@ -414,6 +442,7 @@ end:
 	point_out[1] = y;
 	point_out[2] = z;
 	point_out[3] = t2wall_dist;
+	last_t2wall_dist = t2wall_dist;
 
 	return 0;
 
