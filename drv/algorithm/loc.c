@@ -64,6 +64,8 @@ void Filter(const double x,const double y, const double z, double *out_xyz, u32 
 		last_second_x = now_x;
 		last_second_y = now_y;
 		last_second_z = now_z;
+		last_first_time = last_second_time;
+		last_second_time = time;
 		
 		out_xyz[0] = now_x;
 		out_xyz[1] = now_y;
@@ -411,7 +413,7 @@ end:
 	point_out[0] = x;
 	point_out[1] = y;
 	point_out[2] = z;
-	point_out[2] = t2wall_dist;
+	point_out[3] = t2wall_dist;
 
 	return 0;
 

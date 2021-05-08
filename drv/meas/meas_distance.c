@@ -196,22 +196,37 @@ u8 g_interference_signal_flag = 0;
 u8 g_detection_signal_flag = 0;
 u8 g_get_tx_timestamp_flag = 0;
 u8 g_get_rx_timestamp_flag = 0;
+u8 g_reset_filter = 1;
+u8 g_open_filter_flag = 1;
 dwt_auto_tx_power_config_t g_dwt_auto_tx_power_config;
 key_vaule_t g_key_vaule;
+
+
 
 uint64 g_tx_timestamp = 0;
 uint64 g_rx_timestamp = 0;
 
+
+
+
+
+
+
+
 static float g_uwb_rg_ssi;
+
+
 
 device_config_t			g_device_config;
 locate_net_info_t		g_locate_net_info;
 pos_info_t					g_pos_info;
 
+
+
+
+
 extern volatile u16 g_timer_cnt_100ms;	
 
-static u8 g_reset_filter = 1;
-u8 g_open_filter_flag = 1;
 
 
 /******************************************************************************
@@ -305,6 +320,11 @@ void reset_position_default_para(void)
 		g_device_config.anchor_h = 0;
 		g_device_config.tag_h = 0;
 		g_device_config.chan = 2;
+		g_device_config.t2wall_actual_dist = 0;
+		g_device_config.ref_position[0] = 0; 
+		g_device_config.ref_position[1] = 0;
+		g_device_config.ref_position[2] = 0; 		
+		
 
 }
 
