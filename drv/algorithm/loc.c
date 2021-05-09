@@ -346,6 +346,7 @@ int CalcPosition_enu(double A_r,double B_x,double B_y,double B_z,double B_r,doub
 	double tmp;
 	double tmp_x,tmp_y,tmp_z;
 	double t2wall_dist; //接受机到隧道墙壁的距离
+	double t2main_dist; //接受机到主基站的距离
 
 	
 
@@ -368,6 +369,7 @@ int CalcPosition_enu(double A_r,double B_x,double B_y,double B_z,double B_r,doub
 	//1.求在x轴上的映射x0
 	y0 = 0;
 	x0 = (pow(x2,2) - pow(r2,2) + pow(r1,2) ) / (2 * x2);
+	t2main_dist	= x0;
 
 	if((A_r + B_r) <= Dist_12 || (A_r + Dist_12) <= B_r || (B_r + Dist_12) <= A_r) 
 	{
@@ -441,8 +443,8 @@ end:
 	point_out[0] = x;
 	point_out[1] = y;
 	point_out[2] = z;
-	point_out[3] = t2wall_dist;
-	last_t2wall_dist = t2wall_dist;
+	point_out[3] = t2main_dist;
+	point_out[4] = t2wall_dist;
 
 	return 0;
 

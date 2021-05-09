@@ -762,8 +762,8 @@ U8 UDP_upload_hpr_location(void)
 
     root = cJSON_CreateObject();
 	
-	cJSON_AddNumberToObject(root, "lat", server_Data.latitude);
-	cJSON_AddNumberToObject(root, "lon", server_Data.longitude);
+	cJSON_AddNumberToObject(root, "lat", (float)server_Data.latitude);
+	cJSON_AddNumberToObject(root, "lon", (float)server_Data.longitude);
 	                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
     /* Print to text */
     if(UDP_preallocated(root) != 0)
@@ -985,7 +985,7 @@ static void _Server_thread(void * arg)
 		{
 			//取UWB定位数值与时间
 			Pos_time.UWB_TIME = osKernelGetTickCount();		
-			DBG_SERVER_Print("\r\nHPR_OUTPUT[UWB],%d,%lf,%lf,%lf,%d,%lf,%d,%lf,%lf,%lf,%lf,[VALID],%d\r\n\r\n",\
+			DBG_SERVER_Print("\r\nHPR_OUTPUT[UWB],%d,%lf,%lf,%lf,%d,%lf,%d,%lf,%lf,%lf,%lf,%lf,[VALID],%d\r\n\r\n",\
 							Pos_time.UWB_TIME,\
 							g_pos_info.tag_position[0],g_pos_info.tag_position[1],g_pos_info.tag_position[2],\
 							g_pos_info.main_anchor_id,\
@@ -994,6 +994,7 @@ static void _Server_thread(void * arg)
 							g_pos_info.D1,\
 							g_pos_info.t2ref_dist,\
 							g_pos_info.t2wall_dist,\
+							g_pos_info.t2main_dist,\
 							g_pos_info.rssi,\
 							g_pos_info.tag_position_valid_flag);
 			

@@ -183,6 +183,7 @@ typedef struct
 		double tag_position[3]; 								//标签坐标x,y,z
 		double t2ref_dist;									//接受机到参考点距离
 		double t2wall_dist;									//接受机到隧道墙壁的距离
+		double t2main_dist;
 		double rssi;												//接受信号强度
 		double D0;                                          //测距信息d0
 		double D1;                                          //测距信息d1

@@ -386,46 +386,14 @@ void get_device_para(void)
 void show_position_para(void)
 {
 
-
-
-#if 1
-	GLOBAL_PRINT(("device_type: %d\r\n", g_device_config.device_type)); 
-	if(g_device_config.device_type == TAG) 
-	{  
-			GLOBAL_PRINT(("tag_id: %d\r\n", g_device_config.tag_id));  
-			GLOBAL_PRINT(("tag_h: %lf\r\n", g_device_config.tag_h));  
-			GLOBAL_PRINT(("t2wall_dist: %d\r\n", g_device_config.t2wall_actual_dist));   
-			GLOBAL_PRINT(("ref_position:latitude %lf, longitude %lf, height %lf\r\n", \
-				g_device_config.ref_position[0], \
-				g_device_config.ref_position[1], \
-				g_device_config.ref_position[2]));   
-	} 
-	else if(g_device_config.device_type == ANCHOR) 
-	{  
-		GLOBAL_PRINT(("anchor_id: %d\r\n", g_device_config.anchor_id));   
-		GLOBAL_PRINT(("on_left: %d\r\n", g_device_config.on_left));  
-		GLOBAL_PRINT(("anchor_h: %lf\r\n", g_device_config.anchor_h));  
-		GLOBAL_PRINT(("anchor_idle_num: %d\r\n", g_device_config.anchor_idle_num));   
-		GLOBAL_PRINT(("position:latitude %lf, longitude %lf, height %lf\r\n", \
-			g_device_config.position[0], \
-			g_device_config.position[1], \
-			g_device_config.position[2]));    
-	} 
-	GLOBAL_PRINT(("ant_tx_delay: %d\r\n", g_device_config.ant_tx_delay)); 
-	GLOBAL_PRINT(("ant_rx_delay: %d\r\n", g_device_config.ant_rx_delay));  
-	GLOBAL_PRINT(("tx_power: %2.1f db\r\n", calc_tx_power_config_value_to_db(g_device_config.tx_power)));  
-	GLOBAL_PRINT(("dyn_slot_long: %d\r\n", g_device_config.dyn_slot_long)); 
-	GLOBAL_PRINT(("ranging_slot_long: %d\r\n", g_device_config.ranging_slot_long));  
-	GLOBAL_PRINT(("chan: %d\r\n", g_device_config.chan)); 
-
-
-#else
 	GLOBAL_PRINT(("device_type: %d\r\n", g_device_config.device_type));
 
 	if(g_device_config.device_type == TAG)
 	{
 		GLOBAL_PRINT(("tag_id: %d\r\n", g_device_config.tag_id));
 		GLOBAL_PRINT(("tag_h: %lf\r\n", g_device_config.tag_h));
+	GLOBAL_PRINT(("t2wall_dist: %lf\r\n", g_device_config.t2wall_actual_dist));	
+	GLOBAL_PRINT(("ref_position:latitude %lf, longitude %lf, height %lf\r\n", g_device_config.ref_position[0], g_device_config.ref_position[1], g_device_config.ref_position[2]));			
 	}
 	else if(g_device_config.device_type == ANCHOR)
 	{
@@ -433,9 +401,7 @@ void show_position_para(void)
 		GLOBAL_PRINT(("on_left: %d\r\n", g_device_config.on_left));
 		GLOBAL_PRINT(("anchor_h: %lf\r\n", g_device_config.anchor_h));
 		GLOBAL_PRINT(("anchor_idle_num: %d\r\n", g_device_config.anchor_idle_num));	
-		GLOBAL_PRINT(("t2wall_dist: %d\r\n", g_device_config.t2wall_actual_dist));	
-		GLOBAL_PRINT(("position:latitude %lf, longitude %lf, height %lf\r\n", g_device_config.position[0], g_device_config.position[1], g_device_config.position[2]));	
-		GLOBAL_PRINT(("ref_position:latitude %lf, longitude %lf, height %lf\r\n", g_device_config.ref_position[0], g_device_config.ref_position[1], g_device_config.ref_position[2]));
+		GLOBAL_PRINT(("position:latitude %lf, longitude %lf, height %lf\r\n", g_device_config.position[0], g_device_config.position[1], g_device_config.position[2]));			
 	}
 
 	GLOBAL_PRINT(("ant_tx_delay: %d\r\n", g_device_config.ant_tx_delay));
@@ -445,7 +411,6 @@ void show_position_para(void)
 	GLOBAL_PRINT(("ranging_slot_long: %d\r\n", g_device_config.ranging_slot_long));	
 	GLOBAL_PRINT(("chan: %d\r\n", g_device_config.chan));	
 
-#endif
 }
 
 
@@ -3077,7 +3042,7 @@ ret_t tag_ranging(u8 tag_slot)
 								double distance,dist;  //ÀíÂÛ¾àÀë £¬¹ÀËã¾àÀë
 								double t2ref_dist;
 								double d0,d1;
-								double clua_x_y_z[4];
+								double clua_x_y_z[6];
 								double out_xyz[3];
 								s32 dis0, dis1;
 								u8 cla_flag=0;
@@ -3258,7 +3223,8 @@ ret_t tag_ranging(u8 tag_slot)
 									g_pos_info.tag_position[0] = pcg->latitude;
 									g_pos_info.tag_position[1] = pcg->longitude;
 									g_pos_info.tag_position[2] = pcg->height;
-									g_pos_info.t2wall_dist = clua_x_y_z[3];	
+									g_pos_info.t2main_dist = clua_x_y_z[3];	
+									g_pos_info.t2wall_dist = clua_x_y_z[4];	
 									g_pos_info.t2ref_dist = calc_dist(pcg->latitude, pcg->longitude, pcg->height, g_device_config.ref_position[0],g_device_config.ref_position[1],g_device_config.ref_position[2]);
 									g_pos_info.rssi = g_uwb_rg_ssi;
 									g_pos_info.tag_position_valid_flag = POS_VALID;	
