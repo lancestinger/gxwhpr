@@ -418,6 +418,11 @@ int CalcPosition_enu(double A_r,double B_x,double B_y,double B_z,double B_r,doub
 			
 	
 	y = sqrt(tmp);
+	if(y > 10.0) //如果离隧道墙壁距离太远
+	{
+		DBG_WARNING_PRINT("3.wrong distance")
+		return -3;
+	}
 	t2wall_dist = y;
 	if(anchor_on_left == 1)
 	{
@@ -436,7 +441,7 @@ end:
 	if(isnan(x) || isnan(y) || isnan(z))
 	{
 		DBG_WARNING_PRINT("Invalid calc value\r\n");
-		return -3;
+		return -4;
 	}
 
 	//实际坐标

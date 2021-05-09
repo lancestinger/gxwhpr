@@ -762,8 +762,8 @@ U8 UDP_upload_hpr_location(void)
 
     root = cJSON_CreateObject();
 	
-	cJSON_AddNumberToObject(root, "lat", (float)server_Data.latitude);
-	cJSON_AddNumberToObject(root, "lon", (float)server_Data.longitude);
+	cJSON_AddNumberToObject(root, "lat", server_Data.latitude);
+	cJSON_AddNumberToObject(root, "lon", server_Data.longitude);
 	                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
     /* Print to text */
     if(UDP_preallocated(root) != 0)

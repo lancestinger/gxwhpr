@@ -3109,6 +3109,8 @@ ret_t tag_ranging(u8 tag_slot)
 								distance = tof * SPEED_OF_LIGHT;//距离=光速*飞行时间
 								dist = distance - dwt_getrangebias(config.chan,(float)distance, config.prf);//距离减去矫正系数	
 								dis0 = dist*100;//dis 为单位为cm的距离		
+								
+								DBG_WARNING_PRINT("main:%lf,%lf,%lf,%lf,%ld,%lf,%lf,%lf\r\n", Ra,Rb,Da,Db,tof_dtu,tof,distance,dist);
 
 								if(Time_ts2[3] >= Time_ts2[0])
 								{
@@ -3159,6 +3161,8 @@ ret_t tag_ranging(u8 tag_slot)
 								distance = tof * SPEED_OF_LIGHT;//距离=光速*飞行时间
 								dist = distance - dwt_getrangebias(config.chan,(float)distance, config.prf);//距离减去矫正系数	
 								dis1 = dist*100;//dis 为单位为cm的距离
+								
+								DBG_WARNING_PRINT("sub:%lf,%lf,%lf,%lf,%ld,%lf,%lf,%lf\r\n", Ra,Rb,Da,Db,tof_dtu,tof,distance,dist);
 
 								//距离低通滤波
 								//dis0 = LP(dis0,0);
@@ -3229,13 +3233,12 @@ ret_t tag_ranging(u8 tag_slot)
 									g_pos_info.rssi = g_uwb_rg_ssi;
 									g_pos_info.tag_position_valid_flag = POS_VALID;	
 
-									if(fabs(g_pos_info.t2wall_dist - g_device_config.t2wall_actual_dist) > 3.0)
-									{
-										DBG_WARNING_PRINT("t2wall_dist error is too big\r\n");
-									}
-										
-	
-									DBG_PRINT("6. main_%d dis: %d cm,sub_%d dis: %d cm, tag pos latitude: %lf, longitude: %lf, height: %lf m\r\n", g_locate_net_info.main_anchor_id,dis0, g_locate_net_info.sub_anchor_id,dis1, g_pos_info.tag_position[0], g_pos_info.tag_position[1], g_pos_info.tag_position[2]);							
+								//	if(fabs(g_pos_info.t2wall_dist - g_device_config.t2wall_actual_dist) > 3.0)
+								//	{
+								//		DBG_WARNING_PRINT("t2wall_dist error is too big\r\n");
+								//	}
+																				
+									
 								}
 
 
