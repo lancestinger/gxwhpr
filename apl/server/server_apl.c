@@ -1030,20 +1030,25 @@ static void _Server_thread(void * arg)
 				SERVER_RTK = POS_VALUE_INVALID;
 			}
 		}
-		if(loop_cnt%100 == 0 && MQTT_OFF_LINE == FALSE)
+		if(loop_cnt%100 == 0)
 		{
+		/*
 			if(server_Data.mode == 0)
 			{
 				server_Data.latitude  = 0;
 				server_Data.longitude = 0;
 				server_Data.height    = 0;
 			}
-			if(!upload_hpr_state_to_server())
-				WARN_PRINT(("Heart Messege Sent Error!!\r\n"));
+		*/
+			if(MQTT_OFF_LINE == FALSE)
+			{
+				if(!upload_hpr_state_to_server())
+					WARN_PRINT(("Heart Messege Sent Error!!\r\n"));
+				if(!upload_hpr_cmd_log_to_server())
+					WARN_PRINT(("CMD_log Messege Sent Error!!\r\n"));
+			}
 			if(!UDP_upload_hpr_location())
 				WARN_PRINT(("UDP Messege Sent Error!!\r\n"));
-			if(!upload_hpr_cmd_log_to_server())
-				WARN_PRINT(("CMD_log Messege Sent Error!!\r\n"));
 				
 			if(!flag){
 				HAL_GPIO_WritePin(GPIOA,GPIO_PIN_15,GPIO_PIN_SET);
