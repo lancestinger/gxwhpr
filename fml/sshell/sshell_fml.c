@@ -521,7 +521,14 @@ static BOOL _sshell_excute_set_cmd(U8* ptr)
 
 		save_device_para();
 		ret = TRUE;
-	}		
+	}
+	else if(!GLOBAL_STRNCASECMP(ptr, "t2wall_t ", 9)) 
+	{  
+		char *p_end;  
+		g_device_config.t2wall_threshold = GLOBAL_STRTOD(ptr+9, &p_end);  
+		save_device_para();  
+		ret = TRUE; 
+	}
 	else if(!GLOBAL_STRNCASECMP(ptr, "tag_h ", 6))
 	{
 		char *p_end;
