@@ -192,6 +192,7 @@ u32 g_time_start, g_time_end, g_m_anchor_last_time_start;
 u32 g_last_tag_position_time;
 u8 first_acitve_flag = 0;
 u8 g_ranging_flag = 0;
+u8 g_enable_get_power = 0;
 u8 g_interference_signal_flag = 0;
 u8 g_detection_signal_flag = 0;
 u8 g_get_tx_timestamp_flag = 0;
@@ -321,6 +322,7 @@ void reset_position_default_para(void)
 		g_device_config.tag_h = 0;
 		g_device_config.chan = 2;
 		g_device_config.t2wall_actual_dist = 0;
+		g_device_config.t2wall_threshold = 0;
 		g_device_config.ref_position[0] = 0; 
 		g_device_config.ref_position[1] = 0;
 		g_device_config.ref_position[2] = 0; 		
@@ -392,7 +394,9 @@ void show_position_para(void)
 	{
 		GLOBAL_PRINT(("tag_id: %d\r\n", g_device_config.tag_id));
 		GLOBAL_PRINT(("tag_h: %lf\r\n", g_device_config.tag_h));
-	GLOBAL_PRINT(("t2wall_dist: %lf\r\n", g_device_config.t2wall_actual_dist));	
+	GLOBAL_PRINT(("t2wall_d: %lf\r\n", g_device_config.t2wall_actual_dist));	
+	GLOBAL_PRINT(("t2wall_t: %lf\r\n", g_device_config.t2wall_threshold));		
+		
 	GLOBAL_PRINT(("ref_position:latitude %lf, longitude %lf, height %lf\r\n", g_device_config.ref_position[0], g_device_config.ref_position[1], g_device_config.ref_position[2]));			
 	}
 	else if(g_device_config.device_type == ANCHOR)
@@ -503,7 +507,8 @@ static void rx_ok_cb(const dwt_callback_data_t *cb_data)
 		}
 
 		if(g_pos_info.tag_state == TAG_WAITE_ACTIVATION || g_pos_info.anchor_sub_state == SA_NET_ACTIVATION_ALL_TAG || \
-			g_ranging_flag == 1 || g_dwt_auto_tx_power_config.auto_choose_tx_power == 1 || g_detection_signal_flag == 1)	
+			g_ranging_flag == 1 || g_dwt_auto_tx_power_config.auto_choose_tx_power == 1 || g_detection_signal_flag == 1 || \
+			g_enable_get_power == 1)	
 		{
 			g_uwb_rg_ssi = dwGetReceivePower();
 		}				
@@ -2820,6 +2825,7 @@ ret_t tag_ranging(u8 tag_slot)
 		u32 time;
 		u32 delay_tx_time;
 		u32 cur_dw1000_time;
+		double main_rssi, sub_rssi;
 		ret_t ret = RET_FAILED;
 
 		//tag_slot = 3;
@@ -2962,13 +2968,16 @@ ret_t tag_ranging(u8 tag_slot)
 						//4.接受主基站ACK帧
 						case 4:
 						{
+								g_enable_get_power = 1;
 								ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, DM9000_RX_TIMEOUT);
 								if(ret != RET_SUCCESS)
 								{
+									g_enable_get_power = 0;
 									DBG_ERR_PRINT("4. tag range m_ack rcv failed0: %s\r\n", ret_type_str[ret]);
 									goto end;
 								}
-								
+								main_rssi = g_uwb_rg_ssi;
+								g_enable_get_power = 0;
 								ret = parsing_package(package_buf, package_buf_len, &cmd, &src_id,&target_id, &src_device_type, &src_device_sub_type, buf, &buf_len);
 								if(!((ret == RET_SUCCESS) && (cmd == ACK) && \
 									(target_id == Flash_Device_ID) && (src_id == g_locate_net_info.main_anchor_id)&& \
@@ -2996,13 +3005,16 @@ ret_t tag_ranging(u8 tag_slot)
 						case 5:						
 						{
 								//printf("%d\n",SYS_Calculate_ACTIVE_FLAG);
+								g_enable_get_power = 1;
 								ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, DM9000_RX_TIMEOUT);
 								if(ret != RET_SUCCESS)
 								{
+									g_enable_get_power = 0;
 									DBG_ERR_PRINT("5. tag range s_ack rcv failed0: %s\r\n", ret_type_str[ret]);
 									goto end;
 								}
-								
+								sub_rssi = g_uwb_rg_ssi;
+								g_enable_get_power = 0;
 								ret = parsing_package(package_buf, package_buf_len, &cmd, &src_id,&target_id, &src_device_type, &src_device_sub_type, buf, &buf_len);
 								if(!((ret == RET_SUCCESS) && (cmd == ACK) && \
 									(target_id == Flash_Device_ID) && (src_id == g_locate_net_info.sub_anchor_id)&& \
@@ -3110,7 +3122,8 @@ ret_t tag_ranging(u8 tag_slot)
 								dist = distance - dwt_getrangebias(config.chan,(float)distance, config.prf);//距离减去矫正系数	
 								dis0 = dist*100;//dis 为单位为cm的距离		
 								
-								DBG_WARNING_PRINT("main:%lf,%lf,%lf,%lf,%ld,%lf,%lf,%lf\r\n", Ra,Rb,Da,Db,tof_dtu,tof,distance,dist);
+								DBG_WARNING_PRINT("main:%u,%u,%u,%u,%u,%u,%10.0f,%10.0f,%10.0f,%10.0f,%ld,%lf,%lf,%lf,lf\r\n", \
+									Time_ts[0],Time_ts[1],Time_ts[2],Time_ts[3],Time_ts[4],Time_ts[5],Ra,Rb,Da,Db,tof_dtu,tof,distance,dist,main_rssi);
 
 								if(Time_ts2[3] >= Time_ts2[0])
 								{
@@ -3162,7 +3175,9 @@ ret_t tag_ranging(u8 tag_slot)
 								dist = distance - dwt_getrangebias(config.chan,(float)distance, config.prf);//距离减去矫正系数	
 								dis1 = dist*100;//dis 为单位为cm的距离
 								
-								DBG_WARNING_PRINT("sub:%lf,%lf,%lf,%lf,%ld,%lf,%lf,%lf\r\n", Ra,Rb,Da,Db,tof_dtu,tof,distance,dist);
+								//DBG_WARNING_PRINT("sub:%lf,%lf,%lf,%lf,%ld,%lf,%lf,%lf\r\n", Ra,Rb,Da,Db,tof_dtu,tof,distance,dist);
+								DBG_WARNING_PRINT("sub:%u,%u,%u,%u,%u,%u,%10.0f,%10.0f,%10.0f,%10.0f,%ld,%lf,%lf,%lf,lf\r\n", \
+									Time_ts2[0],Time_ts2[1],Time_ts2[2],Time_ts2[3],Time_ts2[4],Time_ts2[5],Ra,Rb,Da,Db,tof_dtu,tof,distance,dist,sub_rssi);
 
 								//距离低通滤波
 								//dis0 = LP(dis0,0);
@@ -3176,6 +3191,8 @@ ret_t tag_ranging(u8 tag_slot)
 								g_pos_info.main_anchor_id = g_locate_net_info.main_anchor_id;
 								g_pos_info.sub_anchor_id = g_locate_net_info.sub_anchor_id;
 
+								position_interval = get_count_time(g_last_tag_position_time, get_cur_time());	
+								g_last_tag_position_time = get_cur_time();
 
 								//定位解算					
 								center->latitude = g_locate_net_info.anchor_position[0];
@@ -3199,7 +3216,7 @@ ret_t tag_ranging(u8 tag_slot)
 								rett = CalcPosition_enu(d0,pct->easting,pct->northing,pct->upping,d1,hight,g_locate_net_info.on_left,clua_x_y_z);
 								if(rett < 0)
 								{
-									DBG_PRINT("6. main_%d dis: %d cm,sub_%d: %d cm, tag pos is invalid value, rett: %d\r\n\r\n", g_locate_net_info.main_anchor_id,dis0, g_locate_net_info.sub_anchor_id,dis1, rett);							
+									DBG_PRINT("6. main_%d dis: %d cm,sub_%d: %d cm, tag pos is invalid value, rett: %d\r\n", g_locate_net_info.main_anchor_id,dis0, g_locate_net_info.sub_anchor_id,dis1, rett);							
 								}
 								else
 								{								
@@ -3237,7 +3254,11 @@ ret_t tag_ranging(u8 tag_slot)
 								//	{
 								//		DBG_WARNING_PRINT("t2wall_dist error is too big\r\n");
 								//	}
-																				
+																			
+									DBG_WARNING_PRINT("pst_info:%lf,%lf,%lf,%d,%lf,%d,%lf,%lf,%lf,%d\r\n", 
+										g_pos_info.tag_position[0], g_pos_info.tag_position[1], g_pos_info.tag_position[2], \
+										g_locate_net_info.main_anchor_id,d0,g_locate_net_info.sub_anchor_id,d1, \
+										g_pos_info.t2wall_dist,g_pos_info.t2main_dist,position_interval);		
 									
 								}
 
@@ -3247,9 +3268,7 @@ ret_t tag_ranging(u8 tag_slot)
 								
 								time_end = get_cur_time();
 								nus = get_count_time(time_start, time_end);		
-								
-								position_interval = get_count_time(g_last_tag_position_time, get_cur_time());	
-								g_last_tag_position_time = get_cur_time();
+							
 								
 								DBG_PRINT("tag postion calc take time : %d us , pos_intval : %d us\r\n", nus1,position_interval);
 
@@ -5140,7 +5159,8 @@ ret_t s_anchor_ranging(u32 time_out_us)
 					case 3:
 					{
 							cur_dw1000_time = dwt_readsystimestamphi32() ;
-							delay_tx_time = cur_dw1000_time + 7*DW1000_100US_TIMER_CNT;
+							//delay_tx_time = cur_dw1000_time + 7*DW1000_100US_TIMER_CNT;
+							delay_tx_time = cur_dw1000_time + 8*DW1000_100US_TIMER_CNT;
 					
 							buf[0] = T3 >> 24;
 							buf[1] = T3 >> 16;

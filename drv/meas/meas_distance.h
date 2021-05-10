@@ -165,6 +165,7 @@ typedef struct
 		double position[3]; 								//基站坐标x,y,z
 		double ref_position[3]; 						//参考点坐标x,y,z
 		double t2wall_actual_dist;					//接受机到隧道墙壁的实际距离
+		double t2wall_threshold;						//接受机到隧道墙壁的阈值距离
 		float tag_h; 											//标签相对地面的垂直高度
 		float anchor_h; 											//基站相对地面的垂直高度
 
@@ -183,7 +184,7 @@ typedef struct
 		double tag_position[3]; 								//标签坐标x,y,z
 		double t2ref_dist;									//接受机到参考点距离
 		double t2wall_dist;									//接受机到隧道墙壁的距离
-		double t2main_dist;
+		double t2main_dist;									//接受机到主基站的距离
 		double rssi;												//接受信号强度
 		double D0;                                          //测距信息d0
 		double D1;                                          //测距信息d1

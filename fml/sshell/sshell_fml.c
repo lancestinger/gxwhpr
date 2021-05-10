@@ -128,6 +128,7 @@ static const CHAR_T sshell_help_info2[] =
 	"    position xxx xxx xxx    -set position latitude longitude height\r\n"
 	"    ref_position xxx xxx xxx -set ref_position latitude longitude height\r\n"
 	"    t2wall_d xxx            -set t2wall_d data\r\n"	
+	"    t2wall_t xxx            -set t2wall_t data\r\n"		
 	"    anchor_h xxx            -set anchor_h data\r\n"
 	"    on_left xxx             -set on_left data\r\n"
 	"    tx_power xxx            -set tx_power data\r\n"

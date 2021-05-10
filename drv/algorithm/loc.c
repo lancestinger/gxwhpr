@@ -418,9 +418,9 @@ int CalcPosition_enu(double A_r,double B_x,double B_y,double B_z,double B_r,doub
 			
 	
 	y = sqrt(tmp);
-	if(y > 10.0) //如果离隧道墙壁距离太远
+	if(y > g_device_config.t2wall_threshold) //如果离隧道墙壁距离超过阈值
 	{
-		DBG_WARNING_PRINT("3.wrong distance")
+		DBG_WARNING_PRINT("3.wrong distance，t2wall is too big\r\n");
 		return -3;
 	}
 	t2wall_dist = y;
