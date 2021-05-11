@@ -42,11 +42,16 @@ typedef struct
 	U32 UWB_TIME;
 }Pos_count;
 
+extern Server_Data server_Data;
+
 
 extern int SERVER_RTK; 				  /* RTK数据Ready标志 */
 extern int SERVER_UWB; 				  /* UWB数据Ready标志 */
 extern int SERVER_GNSS; 			  /* GNSS数据Ready标志 */
 extern int SERVER_ERROR;			  /* 定位数据错误标志 */
+
+extern double UWB_angle;
+extern double UWB_Veloc;
 
 extern U8 UDP_DST[5];
 extern int UDP_PORT;
@@ -59,6 +64,7 @@ extern U8 upload_efs_all_para_to_server(void);
 extern int num_strchr(const char *str, char c);
 extern int base64_decode(const char * base64, unsigned char * dedata);
 extern int base64_encode( const unsigned char * bindata, char * base64, int binlength );
+extern void UWB_Vel_Angle_calc(void);
 extern void Server_apl_init(void);
 
 #endif

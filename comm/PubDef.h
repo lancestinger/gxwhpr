@@ -52,7 +52,7 @@ extern "C"
         #define PROJECT_NAME		"GXWS33C_01_HuaNuo_GPS_GLO"
     #endif
 #else
-    #define PROJECT_NAME		"GXWHPR_v1.9.23"
+    #define PROJECT_NAME		"GXWHPR_v1.9.24"
 #endif
 
 //超级命令ANSI颜色定义

@@ -38,7 +38,7 @@ osThreadId_t thread_UWB_id=0;
 
 /*------------------------------文件变量------------------------------*/
 
-static U64 thread_UWB_stk[SIZE_4K / 4];
+static U64 thread_UWB_stk[SIZE_4K / 2];
 static const osThreadAttr_t thread_UWB_attr = {
   .stack_mem  = &thread_UWB_stk[0],
   .stack_size = sizeof(thread_UWB_stk),

@@ -742,10 +742,28 @@ static BOOL _sshell_excute_debug_cmd(U8* ptr)
 	    {
 	        sys_debug_set_type(SYS_DEBUG_NTRIP);
 	    }
+		else if(!GLOBAL_STRCASECMP(ptr+3, "rtk"))
+	    {
+	        sys_debug_set_type(SYS_DEBUG_RTK);
+	    }
+		else if(!GLOBAL_STRCASECMP(ptr+3, "GGA"))
+	    {
+	        sys_debug_set_type(SYS_DEBUG_GGA);
+	    }
+		else if(!GLOBAL_STRCASECMP(ptr+3, "RMC"))
+	    {
+	        sys_debug_set_type(SYS_DEBUG_RMC);
+	    }
+		else if(!GLOBAL_STRCASECMP(ptr+3, "ENH"))
+	    {
+	        sys_debug_set_type(SYS_DEBUG_ENHANCE);
+	    }
 		else if(!GLOBAL_STRCASECMP(ptr+3, "all"))
 		{
-			sys_debug_set_type(SYS_DEBUG_POST);
 			sys_debug_set_type(SYS_DEBUG_SERVER);
+			sys_debug_set_type(SYS_DEBUG_GGA);
+			sys_debug_set_type(SYS_DEBUG_RMC);
+			sys_debug_set_type(SYS_DEBUG_RTK);
 		}
 		else
 		{
@@ -767,6 +785,22 @@ static BOOL _sshell_excute_debug_cmd(U8* ptr)
 		{
 			sys_debug_clear_type(SYS_DEBUG_SERVER);
 		}
+		else if(!GLOBAL_STRCASECMP(ptr+4, "rtk"))
+	    {
+	        sys_debug_clear_type(SYS_DEBUG_RTK);
+	    }
+		else if(!GLOBAL_STRCASECMP(ptr+4, "GGA"))
+	    {
+	        sys_debug_clear_type(SYS_DEBUG_GGA);
+	    }
+		else if(!GLOBAL_STRCASECMP(ptr+4, "RMC"))
+	    {
+	        sys_debug_clear_type(SYS_DEBUG_RMC);
+	    }
+		else if(!GLOBAL_STRCASECMP(ptr+4, "ENH"))
+	    {
+	        sys_debug_clear_type(SYS_DEBUG_ENHANCE);
+	    }
 		else if(!GLOBAL_STRCASECMP(ptr+4, "mqtt"))
 	    {
 	        sys_debug_clear_type(SYS_DEBUG_MQTT);

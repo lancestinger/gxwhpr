@@ -55,7 +55,7 @@ void Ntrip_TCP_Init(void)
 	}
 	else
 	{
-		NOTE_PRINT(("Ntrip TCP Connect OK!!\r\n"));
+		DBG_NTRIP_Print(("Ntrip TCP Connect OK!!\r\n"));
 		TCP_INIT_FAILED = FALSE;
 	}
 }
@@ -90,7 +90,7 @@ void Ntrip_QX_Connect(void)
 		else
 		{
 			NTRIP_INIT_FAILED = FALSE;
-			NOTE_PRINT(("Ntrip QX connect OK!!\r\n"));
+			DBG_NTRIP_Print(("Ntrip QX connect OK!!\r\n"));
 		}
 	}
 }

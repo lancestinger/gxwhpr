@@ -40,6 +40,13 @@ typedef struct
 	
 }Parse_data;
 
+typedef enum
+{
+	GGA=0,
+	RMC=1,
+	
+}Nmea_msg;
+
 
 extern Parse_data NMEA_Data_ptr;
 extern char Sys_Date[20];
@@ -47,8 +54,11 @@ extern char Sys_UTC[20];
 extern U32 UBX_1PPS_time;
 extern U8 Origin_flag;
 extern U8 NMEA_OPEN_SWITCH;
+extern int FIRST_UWB_GGA;
+extern int FIRST_UWB_RMC;
 
 U8 gnss_nmea_data_process(IN U8 *data_ptr, IN U32 len);
+extern void NMEA_Rebuild(Nmea_msg mode, U32 len);
 void gnss_nmea_init(gnss_data_t* p_handle);
 #endif
 /*eof*/

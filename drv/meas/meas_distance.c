@@ -2801,6 +2801,42 @@ double calc_dist(double a_lat, double a_long, double a_hight, double b_lat, doub
 	
 }
 
+//a是主基站，b是从基站，t是接受机
+void calc_xyz(double a_lat, double a_long, double a_hight, double b_lat, double b_long, double b_hight, double t_lat, double t_long, double t_hight, double *out_xyz)
+{
+	ECEF pcc;
+	WGS center, pcg, pcg2;
+	ENU pct, pct2;
+	double x, y, z, x_error, y_error, z_error, total_error;
+	char anchor_on_left = 0;
+	int rett;
+	
+	center.latitude = a_lat;
+	center.longitude = a_long;
+	center.height = a_hight;								
+	pcg.latitude = b_lat;
+	pcg.longitude = b_long;
+	pcg.height = b_hight;
+	pcg2.latitude = t_lat;
+	pcg2.longitude = t_long;
+	pcg2.height = t_hight;	
+	WGSToECEF(&pcg, &pcc);									
+	ECEFToENU(&pcc, &center, &pct); //B基站转换为东北天坐标
+	WGSToECEF(&pcg2, &pcc);
+	ECEFToENU(&pcc, &center, &pct2); //接收机转换为东北天坐标
+	
+	//坐标转换。x是离主基站的距离，y是离墙壁的距离，z是接受机相对基站的高度
+	positive_rotate3(pct.easting, pct.northing, pct.upping, pct2.easting, pct2.northing, pct2.upping, &x, &y, &z);
+
+	out_xyz[0] = x;
+	out_xyz[1] = y;
+	out_xyz[2] = z;
+	//printf("x: %lf, y: %lf, z: %lf m\n", out_xyz[0], out_xyz[1], out_xyz[2]);
+	
+	return;
+	
+}
+
 ret_t tag_ranging(u8 tag_slot) 
 {	   			
 		u8 package_buf[PACKAGE_BUF_SIZE];
@@ -2827,6 +2863,7 @@ ret_t tag_ranging(u8 tag_slot)
 		u32 cur_dw1000_time;
 		double main_rssi, sub_rssi;
 		ret_t ret = RET_FAILED;
+		static u32 num = 0;
 
 		//tag_slot = 3;
 		time_start = get_cur_time(); 
@@ -3056,6 +3093,7 @@ ret_t tag_ranging(u8 tag_slot)
 								double d0,d1;
 								double clua_x_y_z[6];
 								double out_xyz[3];
+								double out_xyz2[3];
 								s32 dis0, dis1;
 								u8 cla_flag=0;
 								PECEF pcc;
@@ -3122,7 +3160,7 @@ ret_t tag_ranging(u8 tag_slot)
 								dist = distance - dwt_getrangebias(config.chan,(float)distance, config.prf);//距离减去矫正系数	
 								dis0 = dist*100;//dis 为单位为cm的距离		
 								
-								DBG_WARNING_PRINT("main:%u,%u,%u,%u,%u,%u,%10.0f,%10.0f,%10.0f,%10.0f,%ld,%lf,%lf,%lf,lf\r\n", \
+								DBG_WARNING_PRINT("main:%u,%u,%u,%u,%u,%u,%10.0f,%10.0f,%10.0f,%10.0f,%ld,%lf,%lf,%lf,%lf\r\n", \
 									Time_ts[0],Time_ts[1],Time_ts[2],Time_ts[3],Time_ts[4],Time_ts[5],Ra,Rb,Da,Db,tof_dtu,tof,distance,dist,main_rssi);
 
 								if(Time_ts2[3] >= Time_ts2[0])
@@ -3176,7 +3214,7 @@ ret_t tag_ranging(u8 tag_slot)
 								dis1 = dist*100;//dis 为单位为cm的距离
 								
 								//DBG_WARNING_PRINT("sub:%lf,%lf,%lf,%lf,%ld,%lf,%lf,%lf\r\n", Ra,Rb,Da,Db,tof_dtu,tof,distance,dist);
-								DBG_WARNING_PRINT("sub:%u,%u,%u,%u,%u,%u,%10.0f,%10.0f,%10.0f,%10.0f,%ld,%lf,%lf,%lf,lf\r\n", \
+								DBG_WARNING_PRINT("sub:%u,%u,%u,%u,%u,%u,%10.0f,%10.0f,%10.0f,%10.0f,%ld,%lf,%lf,%lf,%lf\r\n", \
 									Time_ts2[0],Time_ts2[1],Time_ts2[2],Time_ts2[3],Time_ts2[4],Time_ts2[5],Ra,Rb,Da,Db,tof_dtu,tof,distance,dist,sub_rssi);
 
 								//距离低通滤波
@@ -3191,8 +3229,6 @@ ret_t tag_ranging(u8 tag_slot)
 								g_pos_info.main_anchor_id = g_locate_net_info.main_anchor_id;
 								g_pos_info.sub_anchor_id = g_locate_net_info.sub_anchor_id;
 
-								position_interval = get_count_time(g_last_tag_position_time, get_cur_time());	
-								g_last_tag_position_time = get_cur_time();
 
 								//定位解算					
 								center->latitude = g_locate_net_info.anchor_position[0];
@@ -3244,19 +3280,28 @@ ret_t tag_ranging(u8 tag_slot)
 									g_pos_info.tag_position[0] = pcg->latitude;
 									g_pos_info.tag_position[1] = pcg->longitude;
 									g_pos_info.tag_position[2] = pcg->height;
-									g_pos_info.t2main_dist = clua_x_y_z[3];	
-									g_pos_info.t2wall_dist = clua_x_y_z[4];	
+																					
+									calc_xyz(g_locate_net_info.anchor_position[0],g_locate_net_info.anchor_position[1], g_locate_net_info.anchor_position[2], \
+										g_locate_net_info.anchor_position[3],g_locate_net_info.anchor_position[4], g_locate_net_info.anchor_position[5], \
+										g_pos_info.tag_position[0],g_pos_info.tag_position[1],g_pos_info.tag_position[2],out_xyz2);	
+									g_pos_info.t2main_dist = out_xyz2[0];	
+									g_pos_info.t2wall_dist = out_xyz2[1];	
+									//g_pos_info.t2main_dist = clua_x_y_z[3];	
+									//g_pos_info.t2wall_dist = clua_x_y_z[4];	
 									g_pos_info.t2ref_dist = calc_dist(pcg->latitude, pcg->longitude, pcg->height, g_device_config.ref_position[0],g_device_config.ref_position[1],g_device_config.ref_position[2]);
 									g_pos_info.rssi = g_uwb_rg_ssi;
+									position_interval = get_count_time(g_last_tag_position_time, get_cur_time());	
+									g_last_tag_position_time = get_cur_time();
+									g_pos_info.position_interval = position_interval;
 									g_pos_info.tag_position_valid_flag = POS_VALID;	
 
 								//	if(fabs(g_pos_info.t2wall_dist - g_device_config.t2wall_actual_dist) > 3.0)
 								//	{
 								//		DBG_WARNING_PRINT("t2wall_dist error is too big\r\n");
 								//	}
-																			
-									DBG_WARNING_PRINT("pst_info:%lf,%lf,%lf,%d,%lf,%d,%lf,%lf,%lf,%d\r\n", 
-										g_pos_info.tag_position[0], g_pos_info.tag_position[1], g_pos_info.tag_position[2], \
+									num++;									
+									DBG_WARNING_PRINT("[%d]pst_info:%lf,%lf,%lf,%d,%lf,%d,%lf,%lf,%lf,%d\r\n", 
+										num,g_pos_info.tag_position[0], g_pos_info.tag_position[1], g_pos_info.tag_position[2], \
 										g_locate_net_info.main_anchor_id,d0,g_locate_net_info.sub_anchor_id,d1, \
 										g_pos_info.t2wall_dist,g_pos_info.t2main_dist,position_interval);		
 									

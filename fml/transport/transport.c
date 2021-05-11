@@ -117,14 +117,14 @@ int transport_getdata(unsigned char* buf, int count)
     }
     else if(rc==-14)
     {//BSD_ECONNRESET
-        WARN_PRINT(("Connection reset by the peer"));
+        DBG_MQTT_Print(("Connection reset by the peer"));
         iotDev.sta = IOT_STA_INIT;
 		iotRTCMDev.sta = IOT_STA_INIT;
 		iotCmdDev.sta = IOT_STA_INIT;
     }
     else
     {
-        WARN_PRINT(("receive error,err_code=%d\r\n", rc));
+        DBG_MQTT_Print(("receive error,err_code=%d\r\n", rc));
     }
 
     return rc;

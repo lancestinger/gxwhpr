@@ -38,6 +38,10 @@ typedef enum
  	SYS_DEBUG_POST_WARNING,       //定位警告信息	
 	SYS_DEBUG_MQTT,             //MQTT测试
 	SYS_DEBUG_SERVER,           //服务器交互信息打印
+	SYS_DEBUG_ENHANCE,          //增强基站消息
+	SYS_DEBUG_RTK,              //RTK定位信息打印
+	SYS_DEBUG_GGA,             //NMEA GGA消息打印
+	SYS_DEBUG_RMC,             //NMEA RMC消息打印
 	SYS_DEBUG_NTRIP,            //Ntrip调试信息打印
 	SYS_DEBUG_NUM,				//调试数量  
 }SYS_DEBUG_TYPE_Enum;
@@ -85,6 +89,10 @@ if(sys_debug_get_type(module))\
 #define DBG_POST_WARNING_Print(x, ...)		SYS_DBG_Print(SYS_DEBUG_POST_WARNING, x, ##__VA_ARGS__)
 #define DBG_MQTT_Print(x, ...)						SYS_DBG_Print(SYS_DEBUG_MQTT, x, ##__VA_ARGS__)
 #define DBG_SERVER_Print(x, ...)					SYS_DBG_Print(SYS_DEBUG_SERVER, x, ##__VA_ARGS__)
+#define DBG_ENHANCE_Print(x, ...)					SYS_DBG_Print(SYS_DEBUG_ENHANCE, x, ##__VA_ARGS__)
+#define DBG_RTK_Print(x, ...)					    SYS_DBG_Print(SYS_DEBUG_RTK, x, ##__VA_ARGS__)
+#define DBG_GGA_Print(x, ...)					    SYS_DBG_Print(SYS_DEBUG_GGA, x, ##__VA_ARGS__)
+#define DBG_RMC_Print(x, ...)					    SYS_DBG_Print(SYS_DEBUG_RMC, x, ##__VA_ARGS__)
 #define DBG_NTRIP_Print(x, ...)					    SYS_DBG_Print(SYS_DEBUG_NTRIP, x, ##__VA_ARGS__)
 
 

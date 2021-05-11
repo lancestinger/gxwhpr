@@ -9,7 +9,7 @@
 #include "fml/sshell/sshell_fml.h"
 #include "fml/uart/uart_fml.h"
 #include "drv/rngbuf/rngbuf.h"
-
+#include "apl/imu/Coordi_transfer.h"
 
 Server_Data server_Data;
 Pos_count Pos_time;
@@ -26,7 +26,16 @@ int SERVER_UWB=0; 				  /* UWB数据Ready标志 */
 int SERVER_GNSS=0;                /* UWB数据Ready标志 */
 int SERVER_ERROR=0;			      /* 定位数据错误标志 */
 
+double UWB_angle = 0;//UWB推算角度
+double UWB_Veloc = 0;//UWB推算速度
+
 U8 UPLOAD_VAL=0;                  /*上报标志*/
+
+static WGS LLA_pos;
+static WGS ORIGN_pos;
+static ECEF ECEF_pos;
+static ENU ENU_pos;
+
 
 // 全局常量定义
 const char * base64char = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -914,6 +923,48 @@ int base64_encode( const unsigned char * bindata, char * base64, int binlength )
     return j;
 }
 
+void UWB_Vel_Angle_calc(void)
+{
+	double Abs_value = 0;
+	double angle_ptr = 0;
+
+	LLA_pos.latitude = server_Data.latitude;
+	LLA_pos.longitude = server_Data.longitude;
+	LLA_pos.height = server_Data.height;
+	//经纬度坐标转ECEF坐标
+	WGSToECEF(&LLA_pos, &ECEF_pos);
+	//ECEF坐标转东北天坐标
+	ECEFToENU(&ECEF_pos, &ORIGN_pos, &ENU_pos);//得到延迟前的东北天坐标
+	
+	UWB_Veloc = (sqrt(ENU_pos.northing*ENU_pos.northing + ENU_pos.easting*ENU_pos.easting)/1)/KNToMS;
+
+	Abs_value = fabs(ENU_pos.easting/ENU_pos.northing);
+	angle_ptr = atan(Abs_value)*180/PI;
+
+	if(ENU_pos.northing>0&&ENU_pos.easting>=0)
+	{
+		UWB_angle = angle_ptr;
+	}
+	else if(ENU_pos.northing>0&&ENU_pos.easting<=0)
+	{
+		UWB_angle = 360 - angle_ptr;
+	}
+	else if(ENU_pos.northing<0&&ENU_pos.easting<=0)
+	{
+		UWB_angle = 180 + angle_ptr;
+	}
+	else if(ENU_pos.northing<0&&ENU_pos.easting>=0)
+	{
+		UWB_angle = 180 - angle_ptr;
+	}
+	GLOBAL_PRINT(("UWB_Veloc = %f\r\nUWB_angle = %f\r\n",UWB_Veloc,UWB_angle));
+
+	ORIGN_pos.latitude = server_Data.latitude;
+	ORIGN_pos.longitude = server_Data.longitude;
+	ORIGN_pos.height = server_Data.height;
+}
+
+
 /*****************************************************************************
  函 数 名  : Server_output_init
  功能描述  : Server output初始化函数
@@ -963,8 +1014,10 @@ static void Server_output_init(void)
 static void _Server_thread(void * arg)
 {	
 	static U16 loop_cnt = 0;
-	static U8 flag=0, PRINT_ret=0;
+	static U8 flag=0, First_flag=0;
 
+	First_flag = TRUE;
+	
 	while(1)
 	{
 		loop_cnt++;
@@ -975,7 +1028,7 @@ static void _Server_thread(void * arg)
 		{
 			//取RTK定位数值与时间
 			Pos_time.RTK_TIME = osKernelGetTickCount();
-			DBG_SERVER_Print("\r\nHPR_OUTPUT[RTK],%d,%lf,%lf,%lf,[MODE],%d\r\n\r\n",\
+			DBG_RTK_Print("\r\nHPR_OUTPUT[RTK],%d,%lf,%lf,%lf,[MODE],%d\r\n\r\n",\
 							Pos_time.RTK_TIME,\
 							NMEA_Data_ptr.lat,NMEA_Data_ptr.lon,NMEA_Data_ptr.alt,\
 							NMEA_Data_ptr.RTK_mode);
@@ -985,7 +1038,7 @@ static void _Server_thread(void * arg)
 		{
 			//取UWB定位数值与时间
 			Pos_time.UWB_TIME = osKernelGetTickCount();		
-			DBG_SERVER_Print("\r\nHPR_OUTPUT[UWB],%d,%lf,%lf,%lf,%d,%lf,%d,%lf,%lf,%lf,%lf,%lf,[VALID],%d\r\n\r\n",\
+			DBG_ENHANCE_Print("\r\nHPR_OUTPUT[UWB],%d,%lf,%lf,%lf,%d,%lf,%d,%lf,%lf,%lf,%lf,%lf,[VALID],%d\r\n\r\n",\
 							Pos_time.UWB_TIME,\
 							g_pos_info.tag_position[0],g_pos_info.tag_position[1],g_pos_info.tag_position[2],\
 							g_pos_info.main_anchor_id,\
@@ -1012,6 +1065,7 @@ static void _Server_thread(void * arg)
 				server_Data.mode = NMEA_Data_ptr.RTK_mode;
 				GGA_DATA_READY = 0;
 				SERVER_RTK = POS_VALUE_INVALID;
+
 			}
 			else if(g_pos_info.tag_position_valid_flag==POS_VALUE_VALID && NMEA_Data_ptr.RTK_mode != 4)//RTK无效且UWB数据有效
 			{
@@ -1020,6 +1074,19 @@ static void _Server_thread(void * arg)
 				server_Data.height    = g_pos_info.tag_position[2];
 				server_Data.mode = 7;
 				g_pos_info.tag_position_valid_flag = POS_VALUE_INVALID;
+				
+				if(First_flag)
+				{
+					ORIGN_pos.latitude = server_Data.latitude;
+					ORIGN_pos.longitude = server_Data.longitude;
+					ORIGN_pos.height = server_Data.height;
+					First_flag = FALSE;
+				}
+				else
+				{
+					UWB_Vel_Angle_calc();
+				}
+				
 			}
 			else if(g_pos_info.tag_position_valid_flag==POS_INVALID && NMEA_Data_ptr.RTK_mode != 4)//RTK与UWB均无效且GNSS有效
 			{	
@@ -1033,14 +1100,6 @@ static void _Server_thread(void * arg)
 		}
 		if(loop_cnt%100 == 0)
 		{
-		/*
-			if(server_Data.mode == 0)
-			{
-				server_Data.latitude  = 0;
-				server_Data.longitude = 0;
-				server_Data.height    = 0;
-			}
-		*/
 			if(MQTT_OFF_LINE == FALSE)
 			{
 				if(!upload_hpr_state_to_server())

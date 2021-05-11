@@ -55,10 +55,18 @@ typedef struct
   uint8_t  RX_pData[RX_LEN]; //DMA receive buffer
 }USART_TYPE; 
 
+typedef struct  
+{  
+  volatile uint8_t  RX_flag:1;        //IDLE receive flag
+  volatile uint16_t RX_Size;          //receive length
+  uint8_t  RX_pData[RX_LEN]; //DMA receive buffer
+}NMEA_TYPE;
+
+
 extern USART_TYPE UwbUart;  
 extern USART_TYPE SocketBuff;
-extern USART_TYPE UbxUart;
-//extern USART_TYPE CarUbxUart;
+extern NMEA_TYPE GGA_buf;
+extern NMEA_TYPE RMC_buf;
 extern USART_TYPE CacheBuff;
 
 

@@ -190,6 +190,7 @@ typedef struct
 		double D1;                                          //测距信息d1
 		u16 main_anchor_id; 								//主基站id （0-0xffff）		
 		u16 sub_anchor_id; 								  //从基站id （0-0xffff）
+		u32 position_interval;							//定位间隔
 } pos_info_t;
 
 

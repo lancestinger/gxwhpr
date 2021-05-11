@@ -557,7 +557,7 @@ static void _iotclient_monitor_thread(void* arg)
 	                {
 	                    retry_cnt = 0;
 	                    iotDev.sta = IOT_STA_MQTTSUB;
-	                    NOTE_PRINT(("MQTT服务器iotDev连接成功!!!\r\n"));
+	                    DBG_MQTT_Print(("MQTT服务器iotDev连接成功!!!\r\n"));
 	                }
 	            	break;
 
@@ -578,7 +578,7 @@ static void _iotclient_monitor_thread(void* arg)
 	                {
 	                    retry_cnt = 0;
 	                    iotDev.sta = IOT_STA_IDEL;
-	                    NOTE_PRINT(("MQTT订阅iotDev消息成功!\r\n"));
+	                    DBG_MQTT_Print(("MQTT订阅iotDev消息成功!\r\n"));
 	                }
 	           		break;
 
@@ -620,7 +620,7 @@ static void _iotclient_monitor_thread(void* arg)
 	                {
 	                    retry_cnt = 0;
 	                    iotRTCMDev.sta = IOT_STA_MQTTSUB;
-	                    NOTE_PRINT(("MQTT服务器iotRTCMDev连接成功!!!\r\n"));
+	                    DBG_MQTT_Print(("MQTT服务器iotRTCMDev连接成功!!!\r\n"));
 	                }
 	            	break;
 				
@@ -641,7 +641,7 @@ static void _iotclient_monitor_thread(void* arg)
 	                {
 	                    retry_cnt = 0;
 	                    iotRTCMDev.sta = IOT_STA_IDEL;
-	                    NOTE_PRINT(("MQTT订阅iotRTCMDev消息成功!\r\n"));
+	                    DBG_MQTT_Print(("MQTT订阅iotRTCMDev消息成功!\r\n"));
 	                }
 	            	break;
 				
@@ -688,7 +688,7 @@ static void _iotclient_monitor_thread(void* arg)
 	                {
 	                    retry_cnt = 0;
 	                    iotCmdDev.sta = IOT_STA_MQTTSUB;
-	                    NOTE_PRINT(("MQTT服务器iotCmdDev连接成功!!!\r\n"));
+	                    DBG_MQTT_Print(("MQTT服务器iotCmdDev连接成功!!!\r\n"));
 	                }
 	            	break;
 				
@@ -711,8 +711,8 @@ static void _iotclient_monitor_thread(void* arg)
 	                {
 	                    retry_cnt = 0;
 	                    iotCmdDev.sta = IOT_STA_IDEL;
-	                    NOTE_PRINT(("MQTT订阅iotCmdDev消息成功!\r\n"));
-						NOTE_PRINT(("订阅MQTT消息完成!!!\r\n"));
+	                    DBG_MQTT_Print(("MQTT订阅iotCmdDev消息成功!\r\n"));
+						DBG_MQTT_Print(("订阅MQTT消息完成!!!\r\n"));
 	                }
 	            	break;
 				
