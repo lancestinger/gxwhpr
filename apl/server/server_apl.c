@@ -936,7 +936,7 @@ void UWB_Vel_Angle_calc(void)
 	//ECEF坐标转东北天坐标
 	ECEFToENU(&ECEF_pos, &ORIGN_pos, &ENU_pos);//得到延迟前的东北天坐标
 	
-	UWB_Veloc = (sqrt(ENU_pos.northing*ENU_pos.northing + ENU_pos.easting*ENU_pos.easting)/1)/KNToMS;
+	UWB_Veloc = (sqrt(ENU_pos.northing*ENU_pos.northing + ENU_pos.easting*ENU_pos.easting)/(g_pos_info.position_interval/1000000))/KNToMS;
 
 	Abs_value = fabs(ENU_pos.easting/ENU_pos.northing);
 	angle_ptr = atan(Abs_value)*180/PI;
@@ -1015,6 +1015,7 @@ static void _Server_thread(void * arg)
 {	
 	static U16 loop_cnt = 0;
 	static U8 flag=0, First_flag=0;
+	static U32 CNT_num=0;
 
 	First_flag = TRUE;
 	
@@ -1036,9 +1037,11 @@ static void _Server_thread(void * arg)
 		}
 		if(g_pos_info.tag_position_valid_flag == POS_VALID)//UWB定位有效
 		{
+			CNT_num++;
 			//取UWB定位数值与时间
 			Pos_time.UWB_TIME = osKernelGetTickCount();		
-			DBG_ENHANCE_Print("\r\nHPR_OUTPUT[UWB],%d,%lf,%lf,%lf,%d,%lf,%d,%lf,%lf,%lf,%lf,%lf,[VALID],%d\r\n\r\n",\
+			DBG_ENHANCE_Print("\r\nHPR_OUTPUT[UWB],%d,%d,%lf,%lf,%lf,%d,%lf,%d,%lf,%lf,%lf,%lf,%lf,[VALID],%d\r\n\r\n",\
+							CNT_num,\
 							Pos_time.UWB_TIME,\
 							g_pos_info.tag_position[0],g_pos_info.tag_position[1],g_pos_info.tag_position[2],\
 							g_pos_info.main_anchor_id,\
