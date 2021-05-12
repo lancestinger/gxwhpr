@@ -84,9 +84,18 @@ static const GNSS_NMEA_MSG_MAP_T gnss_nmea_msg_map[GNSS_NMEA_MSG_END] =
 };
 
 //static U8 pubx_recv_flag = FALSE;
+static double lat_upload=0;
+static double lon_upload=0;
+static char sub_1[] = "GGA";
+static char sub_2[] = "RMC";
+static int GGA_NUM[]={2,3,4,5,6,9,10,11,12};//纬度、南北标、经度、东西标、模式、海拔、单位、椭球距海平面、单位
+static int RMC_NUM[]={2,3,4,5,6,7,8,12};//有效标志、纬度、南北标、经度、东西标、速度、角度、模式
+
 /*------------------------------文件变量------------------------------*/
 
 Parse_data NMEA_Data_ptr;//
+Parse_data NMEA_Rebuild_data;
+
 char Sys_Date[20]={0};
 char Sys_UTC[20]={0};
 
@@ -322,23 +331,25 @@ static void _gnss_parse_gga(IN U8 *data_ptr,IN U32 len)
 #if 1
     /* 取定位信息 */
 	DBG_SERVER_Print("%s",data_ptr);
-	GLOBAL_MEMSET(GGA_buf.RX_pData,0x0,RX_LEN);
-	GLOBAL_MEMCPY(GGA_buf.RX_pData,data_ptr,len);
-	GGA_buf.RX_flag = TRUE;
+	GLOBAL_MEMSET(NMEA_buf.RX_pData,0x0,RX_LEN);
+	GLOBAL_MEMCPY(NMEA_buf.RX_pData,data_ptr,len);
+	NMEA_buf.RX_flag = TRUE;
 
 	if(server_Data.mode == 7)
 	{
 		if(FIRST_UWB_GGA)
 		{
 			FIRST_UWB_GGA = FALSE;
+			DBG_GGA_Print("%s",data_ptr);
 		}else{
 			NMEA_Rebuild(GGA,len);
 		}
 	}
 	else
 	{
-		DBG_GGA_Print("%s",GGA_buf.RX_pData);
+		DBG_GGA_Print("%s",data_ptr);
 	}
+
 	//GLOBAL_PRINT(("GGA_RX_flag = %d\r\n",CacheBuff.RX_flag));
 
     str_buf_ptr = _gnss_nmea_get_data_after_comma(data_ptr,6);
@@ -524,22 +535,23 @@ static void _gnss_parse_rmc(IN U8 *data_ptr,IN U32 len)
 	U32 tmp_int[10];
 
 	DBG_SERVER_Print("%s",data_ptr);
-	GLOBAL_MEMSET(RMC_buf.RX_pData,0x0,RX_LEN);
-	GLOBAL_MEMCPY(RMC_buf.RX_pData,data_ptr,len);
-	RMC_buf.RX_flag = TRUE;
-
+	GLOBAL_MEMSET(NMEA_buf.RX_pData,0x0,RX_LEN);
+	GLOBAL_MEMCPY(NMEA_buf.RX_pData,data_ptr,len);
+	NMEA_buf.RX_flag = TRUE;
+	
 	if(server_Data.mode == 7)
 	{
 		if(FIRST_UWB_RMC)
 		{
 			FIRST_UWB_RMC = FALSE;
+			DBG_RMC_Print("%s",data_ptr);
 		}else{
 			NMEA_Rebuild(RMC,len);
 		}
 	}
 	else
 	{
-		DBG_RMC_Print("%s",RMC_buf.RX_pData);
+		DBG_RMC_Print("%s",data_ptr);
 	}
 
 	//取UTC时间//
@@ -1022,35 +1034,72 @@ U8 gnss_nmea_data_process(IN U8 *data_ptr, IN U32 len)
 	return TRUE;
 }
 
-void NMEA_Rebuild(Nmea_msg mode, U32 len)
+static U32 NMEA_Log_write(int Messeg_num,char Cache_Buff[],U32 len)
 {
-	int Head_Pos=0,Mesg_Pos=0;
-	int Lat_pos=0, Lon_pos=0, Height_pos=0;
-	int Veloc_pos=0,Angle_pos=0;
+	int Head_Pos=0,Mesg_Pos=0,Start_pos=0;
 	int j=0,x=0,p=0,q=0;
-	int Lat_num = 0,Lon_num = 0,Height_num = 0;
-	int Veloc_num = 0,Angle_num = 0;
 
 	int value_num = 0;
 	int ori_value_num = 0;
+
+	/*---------------LAT Search----------------------------*/
+	Mesg_Pos=0;
+	j = Messeg_num;
+
+	while(j)
+	{		 
+		if(NMEA_buf.RX_pData[Head_Pos+HEAD_LEN+Mesg_Pos] == ',')
+		{
+			j--;
+		}	
+		Mesg_Pos++;
+	}
+	Start_pos = Head_Pos+HEAD_LEN+Mesg_Pos;
+
+	Mesg_Pos=0;
+	while(1)
+	{
+		if(NMEA_buf.RX_pData[Start_pos+Mesg_Pos] == ',')
+			break;
+		Mesg_Pos++;
+	}
+
+	ori_value_num = Mesg_Pos;
+
+	value_num = strlen(Cache_Buff) - ori_value_num;
+
+	if(value_num >0)
+	{
+		for(p=0;p<len-Start_pos;p++ )
+		{
+			NMEA_buf.RX_pData[len-1-p+value_num] = NMEA_buf.RX_pData[len-1-p];
+		}
+	}
+	else if(value_num < 0)
+	{
+		for(p=Start_pos;p<len;p++ )
+		{
+			NMEA_buf.RX_pData[p+ori_value_num+value_num] = NMEA_buf.RX_pData[p+ori_value_num];
+		}
+	}
+	
+	len = len + value_num;
+	
+	memcpy(&NMEA_buf.RX_pData[Start_pos],Cache_Buff,strlen(Cache_Buff));
+
+	return len;
+
+}
+
+static void Pos_val_putin(void)
+{
 	U32 tmp_int=0;
     double tmp_float=0;
-	double lat_upload=0;
-	double lon_upload=0;
-	
-	char Lat_Cache_Buff[20]={NULL};
-	char Lon_Cache_Buff[20]={NULL};
-	char Height_Cache_Buff[20]={NULL};
-	char Veloc_Cache_Buff[20]={NULL};
-	char Angle_Cache_Buff[20]={NULL};
-	char sub_1[] = "GGA";
-	char sub_2[] = "RMC";
-	char *testbuf = "$GNGGA,123,8877.6543211,02020,11122.3333333,333,0.3,0.04,999,12345,113*432";
-	char *testbuf2 = "$GNRMC,111,123,8877.65432,02020,11122.33333,333,110.035,0.00,999,444*432";
 
+	
 	tmp_int = (int)(server_Data.latitude);
 	tmp_float = server_Data.latitude - tmp_int;
-	lat_upload = tmp_int*100+tmp_float*60;
+	NMEA_Rebuild_data.lat = tmp_int*100+tmp_float*60;
 	//GLOBAL_PRINT(("lat_upload = %lf",lat_upload));
 
 	tmp_int = 0;
@@ -1058,21 +1107,61 @@ void NMEA_Rebuild(Nmea_msg mode, U32 len)
 
 	tmp_int = (int)(server_Data.longitude);
 	tmp_float = server_Data.longitude - tmp_int;
-	lon_upload = tmp_int*100+tmp_float*60;
+	NMEA_Rebuild_data.lon = tmp_int*100+tmp_float*60;
 	//GLOBAL_PRINT(("lat_upload = %lf",lon_upload));
+
+	NMEA_Rebuild_data.alt = server_Data.height;
+	NMEA_Rebuild_data.RTK_mode = server_Data.mode;
+	NMEA_Rebuild_data.veloc = UWB_Veloc;
+	NMEA_Rebuild_data.angle = UWB_angle;
+	
+	if(server_Data.latitude>0)
+		NMEA_Rebuild_data.NS_flag = "N";
+	else
+		NMEA_Rebuild_data.NS_flag = "S";
+	if(server_Data.longitude>0)
+		NMEA_Rebuild_data.EW_flag = "E";
+	else
+		NMEA_Rebuild_data.EW_flag = "W";
+	
+	NMEA_Rebuild_data.GGA_slevel = 0;
+	NMEA_Rebuild_data.GGA_unit = "M";
+	NMEA_Rebuild_data.RMC_VA = "A";
+
+}
+
+void NMEA_Rebuild(Nmea_msg mode, U32 len)
+{
+	int Head_Pos=0,Mesg_Pos=0;
+	int x=0;
+	int Lat_num = 0,Lon_num = 0,Height_num = 0;
+	int Veloc_num = 0,Angle_num = 0;
+	int Mode_num=0;
+	int lat_f_num=0,lon_f_num=0;
+	int Untnum_1 =0,Untnum_2=0;
+	int slevel_num =0;
+	U32 total_len = 0;
+	char Messg_Cache_Buff[MSG_BUFLEN]={NULL};
+
+	//char *testbuf = "$GNGGA,123,8877.6543211,02020,11122.3333333,333,666,0.04,999,12345,113*432";
+	//char *testbuf2 = "$GNRMC,111,123,8877.65432,02020,11122.33333,333,110.035,0.00,999,444*432";
+
+	total_len = len;
+
+	Pos_val_putin();
 
 	if(mode == GGA)	
 	{
 		/*--------------------GET HEAD POS-----------------------*/
 		
-		//memset(GGA_buf.RX_pData,0x0,RX_LEN);
-		//memcpy(GGA_buf.RX_pData,testbuf,strlen(testbuf));
+		//memset(NMEA_buf.RX_pData,0x0,RX_LEN);
+		//memcpy(NMEA_buf.RX_pData,testbuf,strlen(testbuf));
 		while(Head_Pos<=RX_LEN)
 		{
-			if(sub_1[0]==GGA_buf.RX_pData[Head_Pos])
+			if(sub_1[0]==NMEA_buf.RX_pData[Head_Pos])
 	        {
 	            x=1;
-	            while(sub_1[x]==GGA_buf.RX_pData[Head_Pos+x] && sub_1[x]!='\0')x++;
+	            while(sub_1[x]==NMEA_buf.RX_pData[Head_Pos+x] && sub_1[x]!='\0')x++;
 	            if(HEAD_LEN==x)
 	            {
 	                break;
@@ -1080,157 +1169,62 @@ void NMEA_Rebuild(Nmea_msg mode, U32 len)
 	        }
 	        Head_Pos++;
 			if(Head_Pos==RX_LEN)
-			printf("Find NMEA_head ERROR!!\r\n");
+			DBG_SERVER_Print("Find NMEA_head ERROR!!\r\n");
 		}
-
-		Lat_num = 2;
-		Lon_num = 4;
-		Height_num = 9;
 		
 		/*---------------LAT Search----------------------------*/
-		Mesg_Pos=0;
-		j = Lat_num;
-		sprintf(Lat_Cache_Buff,"%.6f",lat_upload);
-		while(j)
-		{		 
-			if(GGA_buf.RX_pData[Head_Pos+HEAD_LEN+Mesg_Pos] == ',')
-			{
-				j--;
-			}	
-			Mesg_Pos++;
-		}
-		Lat_pos = Head_Pos+HEAD_LEN+Mesg_Pos;
-
-		Mesg_Pos=1;
-		while(1)
-		{
-			if(GGA_buf.RX_pData[Lat_pos+Mesg_Pos] == ',')
-				break;
-			Mesg_Pos++;
-		}
-
-		ori_value_num = Mesg_Pos;
-
-		value_num = strlen(Lat_Cache_Buff) - ori_value_num;
-
-		if(value_num >=0)
-		{
-			for(p=1;p<len-Lat_pos;p++ )
-			{
-				GGA_buf.RX_pData[len-p+value_num] = GGA_buf.RX_pData[len-p];
-			}
-		}
-		else
-		{
-			for(p=Lat_pos;p<len;p++ )
-			{
-				GGA_buf.RX_pData[p+ori_value_num+value_num] = GGA_buf.RX_pData[p+ori_value_num];
-			}
-		}
+		//GLOBAL_PRINT(("len = %d\r\n",total_len));
 		
-		/*---------------LON Search----------------------------*/
+		sprintf(Messg_Cache_Buff,"%.6f",NMEA_Rebuild_data.lat);
+		total_len = NMEA_Log_write(GGA_NUM[0],&Messg_Cache_Buff,total_len);
+		GLOBAL_MEMSET(Messg_Cache_Buff,0x0,MSG_BUFLEN);
 
-		Mesg_Pos=0;
-		j = Lon_num;
-		sprintf(Lon_Cache_Buff,"%.6f",lon_upload);
-		while(j)
-		{		 
-			if(GGA_buf.RX_pData[Head_Pos+HEAD_LEN+Mesg_Pos] == ',')
-			{
-				j--;
-			}
-			Mesg_Pos++;
-		}
-		Lon_pos = Head_Pos+HEAD_LEN+Mesg_Pos;
+		sprintf(Messg_Cache_Buff,"%s",NMEA_Rebuild_data.NS_flag);
+		total_len = NMEA_Log_write(GGA_NUM[1],&Messg_Cache_Buff,total_len);
+		GLOBAL_MEMSET(Messg_Cache_Buff,0x0,MSG_BUFLEN);
+	
+		sprintf(Messg_Cache_Buff,"%.6f",NMEA_Rebuild_data.lon);
+		total_len = NMEA_Log_write(GGA_NUM[2],&Messg_Cache_Buff,total_len);
+		GLOBAL_MEMSET(Messg_Cache_Buff,0x0,MSG_BUFLEN);
 
-		Mesg_Pos=1;
-		while(1)
-		{
-			if(GGA_buf.RX_pData[Lon_pos+Mesg_Pos] == ',')
-				break;
-			Mesg_Pos++;
-		}
-
-		ori_value_num = Mesg_Pos;
-
-		value_num = strlen(Lon_Cache_Buff) - ori_value_num;
-
-		if(value_num >=0)
-		{
-			for(p=1;p<len-Lon_pos;p++ )
-			{
-				GGA_buf.RX_pData[len-p+value_num] = GGA_buf.RX_pData[len-p];
-			}
-		}
-		else
-		{
-			for(p=Lon_pos;p<len;p++ )
-			{
-				GGA_buf.RX_pData[p+ori_value_num+value_num] = GGA_buf.RX_pData[p+ori_value_num];
-			}
-		}
+		sprintf(Messg_Cache_Buff,"%s",NMEA_Rebuild_data.EW_flag);
+		total_len = NMEA_Log_write(GGA_NUM[3],&Messg_Cache_Buff,total_len);
+		GLOBAL_MEMSET(Messg_Cache_Buff,0x0,MSG_BUFLEN);
 		
-		/*------------------------Height-----------------------------*/
+		sprintf(Messg_Cache_Buff,"%d",NMEA_Rebuild_data.RTK_mode);
+		total_len = NMEA_Log_write(GGA_NUM[4],&Messg_Cache_Buff,total_len);
+		GLOBAL_MEMSET(Messg_Cache_Buff,0x0,MSG_BUFLEN);
+		
+		sprintf(Messg_Cache_Buff,"%.3f",NMEA_Rebuild_data.alt);
+		total_len = NMEA_Log_write(GGA_NUM[5],&Messg_Cache_Buff,total_len);
+		GLOBAL_MEMSET(Messg_Cache_Buff,0x0,MSG_BUFLEN);
 
-		Mesg_Pos=0;
-		j = Height_num;
-		sprintf(Height_Cache_Buff,"%.3f",server_Data.height);
-		while(j)
-		{		 
-			if(GGA_buf.RX_pData[Head_Pos+HEAD_LEN+Mesg_Pos] == ',')
-			{
-				j--;
-			}
-			Mesg_Pos++;
-		}
-		Height_pos = Head_Pos+HEAD_LEN+Mesg_Pos;
+		sprintf(Messg_Cache_Buff,"%s",NMEA_Rebuild_data.GGA_unit);
+		total_len = NMEA_Log_write(GGA_NUM[6],&Messg_Cache_Buff,total_len);
+		GLOBAL_MEMSET(Messg_Cache_Buff,0x0,MSG_BUFLEN);
 
-		Mesg_Pos=1;
-		while(1)
-		{
-			if(GGA_buf.RX_pData[Height_pos+Mesg_Pos] == ',')
-				break;
-			Mesg_Pos++;
-		}
+		sprintf(Messg_Cache_Buff,"%d",NMEA_Rebuild_data.GGA_slevel);
+		total_len = NMEA_Log_write(GGA_NUM[7],&Messg_Cache_Buff,total_len);
+		GLOBAL_MEMSET(Messg_Cache_Buff,0x0,MSG_BUFLEN);
 
-		ori_value_num = Mesg_Pos;
+		sprintf(Messg_Cache_Buff,"%s",NMEA_Rebuild_data.GGA_unit);
+		total_len = NMEA_Log_write(GGA_NUM[8],&Messg_Cache_Buff,total_len);
+		GLOBAL_MEMSET(Messg_Cache_Buff,0x0,MSG_BUFLEN);
 
-		value_num = strlen(Height_Cache_Buff) - ori_value_num;
-
-		if(value_num >=0)
-		{
-			for(p=1;p<len-Height_pos;p++ )
-			{
-				GGA_buf.RX_pData[len-p+value_num] = GGA_buf.RX_pData[len-p];
-			}
-		}
-		else
-		{
-			for(p=Height_pos;p<len;p++ )
-			{
-				GGA_buf.RX_pData[p+ori_value_num+value_num] = GGA_buf.RX_pData[p+ori_value_num];
-			}
-		}
-
-		//printf("lat=%d , lon=%d\r\n",Lat_pos,Lon_pos);
-		memcpy(&GGA_buf.RX_pData[Lat_pos],Lat_Cache_Buff,strlen(Lat_Cache_Buff));
-		memcpy(&GGA_buf.RX_pData[Lon_pos],Lon_Cache_Buff,strlen(Lon_Cache_Buff));
-		memcpy(&GGA_buf.RX_pData[Height_pos],Height_Cache_Buff,strlen(Height_Cache_Buff));
-
-		DBG_GGA_Print("%s",GGA_buf.RX_pData);
+		DBG_GGA_Print("%s",NMEA_buf.RX_pData);
 	}
 	else if(mode == RMC)
 	{
-		//memset(RMC_buf.RX_pData,0x0,RX_LEN);
-		//memcpy(RMC_buf.RX_pData,testbuf2,strlen(testbuf2));
-		/*--------------------GET RMC HEAD POS-----------------------*/
+		/*--------------------GET HEAD POS-----------------------*/
 		
+		//memset(NMEA_buf.RX_pData,0x0,RX_LEN);
+		//memcpy(NMEA_buf.RX_pData,testbuf2,strlen(testbuf2));
 		while(Head_Pos<=RX_LEN)
 		{
-			if(sub_2[0]==RMC_buf.RX_pData[Head_Pos])
+			if(sub_2[0]==NMEA_buf.RX_pData[Head_Pos])
 	        {
 	            x=1;
-	            while(sub_2[x]==RMC_buf.RX_pData[Head_Pos+x] && sub_2[x]!='\0')x++;
+	            while(sub_2[x]==NMEA_buf.RX_pData[Head_Pos+x] && sub_2[x]!='\0')x++;
 	            if(HEAD_LEN==x)
 	            {
 	                break;
@@ -1238,192 +1232,46 @@ void NMEA_Rebuild(Nmea_msg mode, U32 len)
 	        }
 	        Head_Pos++;
 			if(Head_Pos==RX_LEN)
-			printf("Find NMEA_head ERROR!!\r\n");
+			DBG_SERVER_Print("Find NMEA_head ERROR!!\r\n");
 		}
+
+		sprintf(Messg_Cache_Buff,"%s",NMEA_Rebuild_data.RMC_VA);//有效标志
+		total_len = NMEA_Log_write(RMC_NUM[0],&Messg_Cache_Buff,total_len);
+		GLOBAL_MEMSET(Messg_Cache_Buff,0x0,MSG_BUFLEN);
+
+		sprintf(Messg_Cache_Buff,"%.6f",NMEA_Rebuild_data.lat);//纬度
+		total_len = NMEA_Log_write(RMC_NUM[1],&Messg_Cache_Buff,total_len);
+		GLOBAL_MEMSET(Messg_Cache_Buff,0x0,MSG_BUFLEN);
+
+		sprintf(Messg_Cache_Buff,"%s",NMEA_Rebuild_data.NS_flag);//南北标志
+		total_len = NMEA_Log_write(RMC_NUM[2],&Messg_Cache_Buff,total_len);
+		GLOBAL_MEMSET(Messg_Cache_Buff,0x0,MSG_BUFLEN);
 		
-		Lat_num = 3;
-		Lon_num = 5;
-		Veloc_num = 7;
-		Angle_num = 8;
+		sprintf(Messg_Cache_Buff,"%.6f",NMEA_Rebuild_data.lon);//经度
+		total_len = NMEA_Log_write(RMC_NUM[3],&Messg_Cache_Buff,total_len);
+		GLOBAL_MEMSET(Messg_Cache_Buff,0x0,MSG_BUFLEN);
+
+		sprintf(Messg_Cache_Buff,"%s",NMEA_Rebuild_data.EW_flag);//东西标志
+		total_len = NMEA_Log_write(RMC_NUM[4],&Messg_Cache_Buff,total_len);
+		GLOBAL_MEMSET(Messg_Cache_Buff,0x0,MSG_BUFLEN);
+	
+		sprintf(Messg_Cache_Buff,"%.3f",NMEA_Rebuild_data.veloc);//速度
+		total_len = NMEA_Log_write(RMC_NUM[5],&Messg_Cache_Buff,total_len);
+		GLOBAL_MEMSET(Messg_Cache_Buff,0x0,MSG_BUFLEN);
 		
-		/*---------------LAT Search----------------------------*/
-		Mesg_Pos=0;
-		j = Lat_num;
-		sprintf(Lat_Cache_Buff,"%.6f",lat_upload);
-		while(j)
-		{		 
-			if(RMC_buf.RX_pData[Head_Pos+HEAD_LEN+Mesg_Pos] == ',')
-			{
-				j--;
-			}	
-			Mesg_Pos++;
-		}
-		Lat_pos = Head_Pos+HEAD_LEN+Mesg_Pos;
+		sprintf(Messg_Cache_Buff,"%.2f",NMEA_Rebuild_data.angle);//角度
+		total_len = NMEA_Log_write(RMC_NUM[6],&Messg_Cache_Buff,total_len);
+		GLOBAL_MEMSET(Messg_Cache_Buff,0x0,MSG_BUFLEN);
 
-		Mesg_Pos=1;
-		while(1)
-		{
-			if(RMC_buf.RX_pData[Lat_pos+Mesg_Pos] == ',')
-				break;
-			Mesg_Pos++;
-		}
+		sprintf(Messg_Cache_Buff,"%s",NMEA_Rebuild_data.RMC_VA);//模式
+		total_len = NMEA_Log_write(RMC_NUM[7],&Messg_Cache_Buff,total_len);
+		GLOBAL_MEMSET(Messg_Cache_Buff,0x0,MSG_BUFLEN);
 
-		ori_value_num = Mesg_Pos;
-
-		value_num = strlen(Lat_Cache_Buff) - ori_value_num;
-
-		if(value_num >=0)
-		{
-			for(p=1;p<len-Lat_pos;p++ )
-			{
-				RMC_buf.RX_pData[len-p+value_num] = RMC_buf.RX_pData[len-p];
-			}
-		}
-		else
-		{
-			for(p=Lat_pos;p<len;p++ )
-			{
-				RMC_buf.RX_pData[p+ori_value_num+value_num] = RMC_buf.RX_pData[p+ori_value_num];
-			}
-		}
-		
-		/*---------------LON Search----------------------------*/
-
-		Mesg_Pos=0;
-		j = Lon_num;
-		sprintf(Lon_Cache_Buff,"%.6f",lon_upload);
-		while(j)
-		{		 
-			if(RMC_buf.RX_pData[Head_Pos+HEAD_LEN+Mesg_Pos] == ',')
-			{
-				j--;
-			}
-			Mesg_Pos++;
-		}
-		Lon_pos = Head_Pos+HEAD_LEN+Mesg_Pos;
-
-		Mesg_Pos=1;
-		while(1)
-		{
-			if(RMC_buf.RX_pData[Lon_pos+Mesg_Pos] == ',')
-				break;
-			Mesg_Pos++;
-		}
-
-		ori_value_num = Mesg_Pos;
-
-		value_num = strlen(Lon_Cache_Buff) - ori_value_num;
-
-		if(value_num >=0)
-		{
-			for(p=1;p<len-Lon_pos;p++ )
-			{
-				RMC_buf.RX_pData[len-p+value_num] = RMC_buf.RX_pData[len-p];
-			}
-		}
-		else
-		{
-			for(p=Lon_pos;p<len;p++ )
-			{
-				RMC_buf.RX_pData[p+ori_value_num+value_num] = RMC_buf.RX_pData[p+ori_value_num];
-			}
-		}
-
-		/*---------------Veloc Search----------------------------*/
-		Mesg_Pos=0;
-		j = Veloc_num;
-		sprintf(Veloc_Cache_Buff,"%.3f",UWB_Veloc);
-		while(j)
-		{		 
-			if(RMC_buf.RX_pData[Head_Pos+HEAD_LEN+Mesg_Pos] == ',')
-			{
-				j--;
-			}	
-			Mesg_Pos++;
-		}
-		Veloc_pos = Head_Pos+HEAD_LEN+Mesg_Pos;
-		
-		Mesg_Pos=1;
-		while(1)
-		{
-			if(RMC_buf.RX_pData[Veloc_pos+Mesg_Pos] == ',')
-				break;
-			Mesg_Pos++;
-		}
-
-		ori_value_num = Mesg_Pos;
-
-		value_num = strlen(Veloc_Cache_Buff) - ori_value_num;
-
-		if(value_num >=0)
-		{
-			for(p=1;p<len-Veloc_pos;p++ )
-			{
-				RMC_buf.RX_pData[len-p+value_num] = RMC_buf.RX_pData[len-p];
-			}
-		}
-		else
-		{
-			for(p=Veloc_pos;p<len;p++ )
-			{
-				RMC_buf.RX_pData[p+ori_value_num+value_num] = RMC_buf.RX_pData[p+ori_value_num];
-			}
-		}
-		
-		
-		/*---------------Angle Search----------------------------*/
-
-		Mesg_Pos=0;
-		j = Angle_num;
-		sprintf(Angle_Cache_Buff,"%.2f",UWB_angle);
-		while(j)
-		{		 
-			if(RMC_buf.RX_pData[Head_Pos+HEAD_LEN+Mesg_Pos] == ',')
-			{
-				j--;
-			}
-			Mesg_Pos++;
-		}
-		Angle_pos = Head_Pos+HEAD_LEN+Mesg_Pos;
-
-		Mesg_Pos=1;
-		while(1)
-		{
-			if(RMC_buf.RX_pData[Angle_pos+Mesg_Pos] == ',')
-				break;
-			Mesg_Pos++;
-		}
-
-		ori_value_num = Mesg_Pos;
-
-		value_num = strlen(Angle_Cache_Buff) - ori_value_num;
-
-		if(value_num >=0)
-		{
-			for(p=1;p<len-Angle_pos;p++ )
-			{
-				RMC_buf.RX_pData[len-p+value_num] = RMC_buf.RX_pData[len-p];
-			}
-		}
-		else
-		{
-			for(p=Angle_pos;p<len;p++ )
-			{
-				RMC_buf.RX_pData[p+ori_value_num+value_num] = RMC_buf.RX_pData[p+ori_value_num];
-			}		
-		}
-		
-		/*-----------------------------------------------------*/
+		DBG_RMC_Print("%s",NMEA_buf.RX_pData);
 
 
-		//GLOBAL_PRINT(("RMC lat=%d , lon=%d\r\n",Lat_pos,Lon_pos));
-		memcpy(&RMC_buf.RX_pData[Lat_pos],Lat_Cache_Buff,strlen(Lat_Cache_Buff));
-		memcpy(&RMC_buf.RX_pData[Lon_pos],Lon_Cache_Buff,strlen(Lon_Cache_Buff));
-		memcpy(&RMC_buf.RX_pData[Veloc_pos],Veloc_Cache_Buff,strlen(Veloc_Cache_Buff));
-		memcpy(&RMC_buf.RX_pData[Angle_pos],Angle_Cache_Buff,strlen(Angle_Cache_Buff));
-
-		DBG_RMC_Print("%s",RMC_buf.RX_pData);
 	}
+
 
 }
 

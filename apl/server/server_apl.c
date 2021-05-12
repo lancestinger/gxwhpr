@@ -936,7 +936,7 @@ void UWB_Vel_Angle_calc(void)
 	//ECEF坐标转东北天坐标
 	ECEFToENU(&ECEF_pos, &ORIGN_pos, &ENU_pos);//得到延迟前的东北天坐标
 	
-	UWB_Veloc = (sqrt(ENU_pos.northing*ENU_pos.northing + ENU_pos.easting*ENU_pos.easting)/(g_pos_info.position_interval/1000000))/KNToMS;
+	UWB_Veloc = (sqrt(ENU_pos.northing*ENU_pos.northing + ENU_pos.easting*ENU_pos.easting)/(g_pos_info.position_interval/1000000))/KNToMS;//
 
 	Abs_value = fabs(ENU_pos.easting/ENU_pos.northing);
 	angle_ptr = atan(Abs_value)*180/PI;
@@ -957,11 +957,12 @@ void UWB_Vel_Angle_calc(void)
 	{
 		UWB_angle = 180 - angle_ptr;
 	}
-	GLOBAL_PRINT(("UWB_Veloc = %f\r\nUWB_angle = %f\r\n",UWB_Veloc,UWB_angle));
+	//GLOBAL_PRINT(("UWB_Veloc = %f\r\nUWB_angle = %f\r\n",UWB_Veloc,UWB_angle));
 
 	ORIGN_pos.latitude = server_Data.latitude;
 	ORIGN_pos.longitude = server_Data.longitude;
 	ORIGN_pos.height = server_Data.height;
+
 }
 
 
@@ -1068,7 +1069,6 @@ static void _Server_thread(void * arg)
 				server_Data.mode = NMEA_Data_ptr.RTK_mode;
 				GGA_DATA_READY = 0;
 				SERVER_RTK = POS_VALUE_INVALID;
-
 			}
 			else if(g_pos_info.tag_position_valid_flag==POS_VALUE_VALID && NMEA_Data_ptr.RTK_mode != 4)//RTK无效且UWB数据有效
 			{
@@ -1120,6 +1120,12 @@ static void _Server_thread(void * arg)
 				HAL_GPIO_WritePin(GPIOA,GPIO_PIN_15,GPIO_PIN_RESET);
 				flag = FALSE;
 			}
+		}
+		if(g_pos_info.tag_position_valid_flag == POS_INVALID)
+		{
+			FIRST_UWB_GGA = TRUE;
+			FIRST_UWB_RMC = TRUE;
+			First_flag = TRUE;
 		}
 		delay_ms(10);
 	}

@@ -24,6 +24,8 @@
 #include "apl/imu/ins_baseparams.h"
 
 
+#define MSG_BUFLEN      15
+
 extern U8 GGA_OLD_FLAG;
 extern U8 GGA_DATA_READY;
 extern U8 RMC_DATA_READY;
@@ -37,6 +39,11 @@ typedef struct
 	U8 RTK_mode;		 //RTK模式
 	F32 angle;         //航向角
 	F64 veloc;         //航速
+	char *EW_flag;       //东西标志
+	char *NS_flag;       //南北标志
+	U8 GGA_slevel;     //GGA大地椭球面距海平面距离
+	char *GGA_unit;     //GGA单位
+	char *RMC_VA;       //RMC有效标志
 	
 }Parse_data;
 
@@ -49,6 +56,7 @@ typedef enum
 
 
 extern Parse_data NMEA_Data_ptr;
+extern Parse_data NMEA_Rebuild_data;
 extern char Sys_Date[20];
 extern char Sys_UTC[20];
 extern U32 UBX_1PPS_time;
@@ -58,7 +66,7 @@ extern int FIRST_UWB_GGA;
 extern int FIRST_UWB_RMC;
 
 U8 gnss_nmea_data_process(IN U8 *data_ptr, IN U32 len);
-extern void NMEA_Rebuild(Nmea_msg mode, U32 len);
+extern void NMEA_Rebuild(Nmea_msg mode,U32 len);
 void gnss_nmea_init(gnss_data_t* p_handle);
 #endif
 /*eof*/
