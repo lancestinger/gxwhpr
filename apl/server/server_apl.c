@@ -13,6 +13,8 @@
 
 Server_Data server_Data;
 Pos_count Pos_time;
+Server_Ori_Data serOriData;
+
 
 static u8 g_mqtt_print_tmpbuf[1024];
 static u8 g_mqtt_print_buf[1300];
@@ -143,6 +145,7 @@ U8 upload_hpr_state_to_server(void)
 {
     cJSON *root = NULL;
     cJSON *data_obj = NULL;
+	char version_str[30]={0};
 	static u32 cnt_num = 0;
 
 	if(g_device_config.device_type != TAG)
@@ -154,11 +157,7 @@ U8 upload_hpr_state_to_server(void)
     data_obj = cJSON_CreateObject();
 
     cJSON_AddNumberToObject(root, "cmd", 601);
-    cJSON_AddNumberToObject(root, "response", 0);
-    cJSON_AddStringToObject(root, "task_uuid","1234567890123456");
-    cJSON_AddStringToObject(root, "cmd_uuid","1234567890123456");
 
-	
 	cJSON_AddNumberToObject(data_obj, "latitude", server_Data.latitude);
 	cJSON_AddNumberToObject(data_obj, "longitude", server_Data.longitude);
 	cJSON_AddNumberToObject(data_obj, "altitude", server_Data.height);
@@ -166,7 +165,8 @@ U8 upload_hpr_state_to_server(void)
 	
 	if(cnt_num%10 == 0)
 	{
-		cJSON_AddStringToObject(data_obj, "version",PROJECT_NAME);
+		sprintf(version_str,"GXWHPR_v%u.%u.%u",SW_VERSION_H,SW_VERSION_M,SW_VERSION_L);
+		cJSON_AddStringToObject(data_obj, "version",(char*)version_str);
 		cJSON_AddNumberToObject(data_obj, "tagH", g_device_config.tag_h);
 		cJSON_AddNumberToObject(data_obj, "txPower", calc_tx_power_config_value_to_db(g_device_config.tx_power));
 		cJSON_AddNumberToObject(data_obj, "id", TAG_ID_SUM);
@@ -261,7 +261,7 @@ static U8 upload_hpr_cmd_feedback_to_server(Server_Ori_Data data, int state)
     修改内容   : 创建
 
 *****************************************************************************/
-U8 upload_hpr_update_feedback_to_server(int state)
+U8 upload_hpr_update_feedback_to_server(Server_Ori_Data data,int state)
 {
     cJSON *root = NULL;
     cJSON *data_obj = NULL;
@@ -270,9 +270,10 @@ U8 upload_hpr_update_feedback_to_server(int state)
     data_obj = cJSON_CreateObject();
 
     cJSON_AddNumberToObject(root, "cmd", 102);
-    cJSON_AddNumberToObject(root, "response", 0);
-    cJSON_AddStringToObject(root, "task_uuid", "1123456789123456");
-    cJSON_AddStringToObject(root, "cmd_uuid", "0123456789123456");
+    cJSON_AddNumberToObject(root, "response", (data.response - 1));
+    cJSON_AddStringToObject(root, "task_uuid", data.task_uuid);
+    cJSON_AddStringToObject(root, "cmd_uuid", data.cmd_uuid);
+
     
     cJSON_AddNumberToObject(data_obj, "status", state);
 
@@ -392,23 +393,20 @@ U8 upload_hpr_cmd_log_to_server(void)
     修改内容   : 创建
 
 *****************************************************************************/
-U8 upload_efs_all_para_to_server(void)
+static U8 upload_hpr_all_para_to_server(void)
 {
     cJSON *root = NULL;
     cJSON *data_obj = NULL;
-	char temp_str[50] = {0};
+	char temp_str[30] = {0};
 	
     root = cJSON_CreateObject();
     data_obj = cJSON_CreateObject();
 
     cJSON_AddNumberToObject(root, "cmd", 601);	
-    cJSON_AddNumberToObject(root, "response", 0);
-    cJSON_AddStringToObject(root, "task_uuid","1234567890123456");
-    cJSON_AddStringToObject(root, "cmd_uuid","1234567890123456");
 
-	cJSON_AddStringToObject(data_obj, "SOFTWARE VERSION", HW_VERSION);
-	sprintf(temp_str, "%d.%d", SW_VERSION_H, SW_VERSION_L);
-	cJSON_AddStringToObject(data_obj, "HARDWARE VERSION", temp_str);
+	sprintf(temp_str,"GXWHPR_v%u.%u.%u",SW_VERSION_H,SW_VERSION_M,SW_VERSION_L);
+	cJSON_AddStringToObject(data_obj, "SOFTWARE VERSION", (char*)temp_str);
+	cJSON_AddStringToObject(data_obj, "HARDWARE VERSION", HW_VERSION);
 
 
 	if(g_device_config.device_type == ANCHOR)
@@ -483,7 +481,6 @@ U8 parse_server_data(U8* buf, int len)
 
     int cmd = 0;
 
-	Server_Ori_Data serOriData;
 	GLOBAL_MEMSET(&serOriData, 0x0, sizeof(serOriData));
 
     receive_obj = cJSON_Parse((char *)buf);
@@ -622,7 +619,7 @@ U8 parse_server_data(U8* buf, int len)
 			break;
 			
 		case 10001:
-			upload_efs_all_para_to_server();
+			upload_hpr_all_para_to_server();
 			break;
 
         default:

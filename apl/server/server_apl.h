@@ -43,7 +43,7 @@ typedef struct
 }Pos_count;
 
 extern Server_Data server_Data;
-
+extern Server_Ori_Data serOriData;
 
 extern int SERVER_RTK; 				  /* RTK数据Ready标志 */
 extern int SERVER_UWB; 				  /* UWB数据Ready标志 */
@@ -59,7 +59,7 @@ extern int UDP_PORT;
 extern U8 upload_hpr_state_to_server(void);
 extern U8 parse_server_data(U8* buf, int len);
 extern U8 UDP_upload_hpr_location(void);
-extern U8 upload_hpr_update_feedback_to_server(int state);
+extern U8 upload_hpr_update_feedback_to_server(Server_Ori_Data data,int state);
 extern U8 upload_efs_all_para_to_server(void);
 extern int num_strchr(const char *str, char c);
 extern int base64_decode(const char * base64, unsigned char * dedata);

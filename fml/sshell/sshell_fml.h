@@ -35,7 +35,8 @@
 
 //beta°æ±¾
 #define SW_VERSION_H		1
-#define SW_VERSION_L		8
+#define SW_VERSION_M		9
+#define SW_VERSION_L		28
 
 
 
@@ -56,7 +57,7 @@
 							GLOBAL_PRINT(("EXT SRAM\t\t: %s\r\n", EXT_SRAM_SIZE));\
 							GLOBAL_PRINT(("BUILD DATE\t\t: %s\t%s\r\n", BUILD_DATE, BUILD_TIME));\
 							GLOBAL_PRINT(("HARDWARE VERSION\t: %s\r\n", HW_VERSION));\
-							GLOBAL_PRINT(("SOFTWARE VERSION\t: V%u.%u\r\n", SW_VERSION_H, SW_VERSION_L));\
+							GLOBAL_PRINT(("SOFTWARE VERSION\t: v%u.%u.%u\r\n", SW_VERSION_H, SW_VERSION_M, SW_VERSION_L));\
 							GLOBAL_PRINT(("SYSRUN TIME\t\t: %02dd %02d:%02d:%02d\r\n", sysup_seconds_g/86400, sysup_seconds_g%86400/3600, sysup_seconds_g%3600/60, sysup_seconds_g%60));\
 							GLOBAL_PRINT(("CPU USAGE\t\t: %.1f%%\r\n", cpu_usage_g));
 							//GLOBAL_PRINT(("CHIP TEMPER\t\t: %.2f ¡æ \r\n", cpu_temper_g));

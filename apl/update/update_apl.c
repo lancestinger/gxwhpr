@@ -235,49 +235,49 @@ static void _update_thread(void* arg)
                     frename(ARM_UPLOAD_FILE_NAME_TEMP, ARM_UPLOAD_FILE_NAME);
                     rtc_bakup_write(BKUP_BOOT_UPGRADE);
                     NOTE_PRINT(("升级文件为ARM!!!!\r\n"));
-                    upload_hpr_update_feedback_to_server(E_UPDATE_Success);
+                    upload_hpr_update_feedback_to_server(serOriData, E_UPDATE_Success);
                 }
                 else
                 {
                     /* code */
-                    upload_hpr_update_feedback_to_server(E_UPDATE_CheckFail);
+                    upload_hpr_update_feedback_to_server(serOriData, E_UPDATE_CheckFail);
                 }
                 
                 update_handle_g.updateSta = updateSta_EventIdle;
             break;
 
             case updateSta_EventTimeout:
-                upload_hpr_update_feedback_to_server(E_UPDATE_Timeout);
+                upload_hpr_update_feedback_to_server(serOriData, E_UPDATE_Timeout);
                 update_handle_g.updateSta = updateSta_EventIdle;
             break;
 
             case updateSta_EventLoginFailed:
-                upload_hpr_update_feedback_to_server(E_UPDATE_LoginFailed);
+                upload_hpr_update_feedback_to_server(serOriData, E_UPDATE_LoginFailed);
                 update_handle_g.updateSta = updateSta_EventIdle;
             break;
 
             case updateSta_EventAccessDenied:
-                upload_hpr_update_feedback_to_server(E_UPDATE_AccessDenied);
+                upload_hpr_update_feedback_to_server(serOriData, E_UPDATE_AccessDenied);
                 update_handle_g.updateSta = updateSta_EventIdle;            
             break;
 
             case updateSta_EventFileNotFound://文件未找到
-                upload_hpr_update_feedback_to_server(E_UPDATE_FileNotFound);
+                upload_hpr_update_feedback_to_server(serOriData, E_UPDATE_FileNotFound);
                 update_handle_g.updateSta = updateSta_EventIdle;
             break;
 
             case updateSta_EventInvalidDirectory:
-                upload_hpr_update_feedback_to_server(E_UPDATE_InvalidDirectory);
+                upload_hpr_update_feedback_to_server(serOriData, E_UPDATE_InvalidDirectory);
                 update_handle_g.updateSta = updateSta_EventIdle;
             break;
 
             case updateSta_EventLocalFileError:
-                upload_hpr_update_feedback_to_server(E_UPDATE_LocalFileError);
+                upload_hpr_update_feedback_to_server(serOriData, E_UPDATE_LocalFileError);
                 update_handle_g.updateSta = updateSta_EventIdle;
             break;
 
             case updateSta_EventError:
-                upload_hpr_update_feedback_to_server(E_UPDATE_Error);
+                upload_hpr_update_feedback_to_server(serOriData, E_UPDATE_Error);
                 update_handle_g.updateSta = updateSta_EventIdle;            
             break;
 
