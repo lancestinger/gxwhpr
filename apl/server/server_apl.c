@@ -40,7 +40,7 @@ static ENU ENU_pos;
 // 全局常量定义
 const char * base64char = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const char padding_char = '=';
-
+/*
 U8 UDP_DST[5]={
 						192,
 						168,
@@ -48,7 +48,7 @@ U8 UDP_DST[5]={
 						158,
 				};
 int UDP_PORT = 8088;
-
+*/
 static U64 thread_Server_stk[SIZE_4K / 8];
 static const osThreadAttr_t thread_Server_attr = {
   .stack_mem  = &thread_Server_stk[0],
@@ -171,7 +171,8 @@ U8 upload_hpr_state_to_server(void)
 		cJSON_AddNumberToObject(data_obj, "txPower", calc_tx_power_config_value_to_db(g_device_config.tx_power));
 		cJSON_AddNumberToObject(data_obj, "id", TAG_ID_SUM);
 		cJSON_AddNumberToObject(data_obj, "iTranAntDelay", g_device_config.ant_tx_delay);  
-	  	cJSON_AddNumberToObject(data_obj, "iRecvAntDelay", g_device_config.ant_rx_delay);
+		cJSON_AddNumberToObject(data_obj, "iRecvAntDelay", g_device_config.ant_rx_delay);
+		cJSON_AddStringToObject(data_obj, "ms_id",(char*)UDPBuff.RX_pData);
 	}
 	
     cJSON_AddItemToObject(root, "data", data_obj);   
@@ -515,7 +516,7 @@ U8 parse_server_data(U8* buf, int len)
     strcpy(serOriData.cmd_uuid, cJSON_GetObjectItem(receive_obj,"cmd_uuid")->valuestring);
     
     data_obj = cJSON_GetObjectItem(receive_obj,"data");
-
+	
     switch(cmd)
     {
         case 100://开始升级
@@ -578,7 +579,7 @@ U8 parse_server_data(U8* buf, int len)
             item_obj = data_obj->child;
  
             while(item_obj)
-            {
+            {	
 				if(!strcmp(item_obj->string,"tagH"))
                 {
 					g_device_config.tag_h = item_obj->valuedouble;
@@ -603,13 +604,14 @@ U8 parse_server_data(U8* buf, int len)
                 }
 									
                 item_obj = item_obj->next;
+				//DBG_MQTT_Print("item_obj = %s\r\n",item_obj->string);
             }
 			
 			GLOBAL_INTVAL(g_device_config.ant_tx_delay);
 			GLOBAL_INTVAL(g_device_config.ant_rx_delay);
 			GLOBAL_FLTVAL(g_device_config.tag_h);
 			GLOBAL_HEX(g_device_config.tx_power);
-		
+			
             upload_hpr_cmd_feedback_to_server(serOriData,1);
         break;
 
@@ -729,15 +731,17 @@ static int UDP_preallocated(cJSON *root)
     }
     //GLOBAL_PRINT(("json str:%s\r\n",buf));
 	DBG_Socket_Print("UDP SENT = %s\r\n",out);
-	
+
+	udp_set_dst(UDP_dst);
+	/*
 	UDP_dst->sin_family = PF_INET;
-	UDP_dst->sin_addr.s_b1 = UDP_DST[0];
-	UDP_dst->sin_addr.s_b2 = UDP_DST[1];
-	UDP_dst->sin_addr.s_b3 = UDP_DST[2];
-	UDP_dst->sin_addr.s_b4 = UDP_DST[3];
-	UDP_dst->sin_port = htons(UDP_PORT);
-	
-    socket_UDP_send_msg(SOCKET_JSON,UDP_dst,(U8*)out,len_out);
+	UDP_dst->sin_addr.s_b1 = main_handle_g.cfg.net.MS_ip[0];
+	UDP_dst->sin_addr.s_b2 = main_handle_g.cfg.net.MS_ip[1];
+	UDP_dst->sin_addr.s_b3 = main_handle_g.cfg.net.MS_ip[2];
+	UDP_dst->sin_addr.s_b4 = main_handle_g.cfg.net.MS_ip[3];
+	UDP_dst->sin_port = htons(main_handle_g.cfg.net.MS_port);
+	*/
+    socket_UDP_send_msg(SOCKET_MS,UDP_dst,(U8*)out,len_out);
 
 	free(UDP_dst);
     free(out);
@@ -765,14 +769,23 @@ static int UDP_preallocated(cJSON *root)
 U8 UDP_upload_hpr_location(void)
 {
 	cJSON *root = NULL;
+	char Str[20]={0};
 
 	if(g_device_config.device_type != TAG)
 		return TRUE;
 
     root = cJSON_CreateObject();
 	
-	cJSON_AddNumberToObject(root, "lat", server_Data.latitude);
-	cJSON_AddNumberToObject(root, "lon", server_Data.longitude);
+	cJSON_AddStringToObject(root, "title","position");
+    cJSON_AddStringToObject(root, "date",Sys_Date);
+	cJSON_AddStringToObject(root, "utc",Sys_UTC);
+	sprintf(Str,"%.8f",server_Data.latitude);
+	cJSON_AddStringToObject(root, "lat",(char*)Str);
+	sprintf(Str,"%.8f",server_Data.longitude);
+	cJSON_AddStringToObject(root, "lon",(char*)Str);
+	sprintf(Str,"%.3f",server_Data.height);
+	cJSON_AddStringToObject(root, "alt",(char*)Str);
+	cJSON_AddNumberToObject(root, "mode",server_Data.mode);
 	                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
     /* Print to text */
     if(UDP_preallocated(root) != 0)
@@ -1112,7 +1125,7 @@ static void _Server_thread(void * arg)
 			}
 			if(!UDP_upload_hpr_location())
 				WARN_PRINT(("UDP Messege Sent Error!!\r\n"));
-				
+
 			if(!flag){
 				HAL_GPIO_WritePin(GPIOA,GPIO_PIN_15,GPIO_PIN_SET);
 				flag = TRUE;

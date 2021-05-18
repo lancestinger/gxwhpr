@@ -1,4 +1,5 @@
 #include "iotclient.h"
+#include "drv/uart/uart_drv.h"
 #include "drv/MQTTPacket/MQTTPacket.h"
 #include "drv/MQTTPacket/MQTTConnect.h"
 #include "transport/transport.h"
@@ -7,6 +8,8 @@
 #include "apl/Ntrip/Ntrip.h"
 #include "drv/gpio/gpio_drv.h"
 #include "fml/gnss/nmea.h"
+#include "drv/socket/socket_drv.h"
+
 
 
 static U64 thread_iotclient_monitor_stk[SIZE_4K / 8];
@@ -156,7 +159,7 @@ static int connectMqttServer(IOT_Device_t* iotdev)
     
 	if(iotdev->mqttSock <= 0)
 	{
-		WARN_PRINT(("mysock error,mysock = %d\r\n",iotdev->mqttSock));
+		DBG_MQTT_Print("mysock error,mysock = %d\r\n",iotdev->mqttSock);
 		//return mysock;
 	}
     else
@@ -327,6 +330,7 @@ int iotclient_publish(IOT_Device_t* iotdev, const char* payload, int payloadlen)
             {
                 DBG_MQTT_Print("send Packet error!!!,err=%d\r\n",rc);
                 iotdev->bMqttConnect = FALSE;
+				MQTT_OFF_LINE = TRUE;
                 iotDev.sta = IOT_STA_INIT;
 				iotRTCMDev.sta = IOT_STA_INIT;
 				iotCmdDev.sta= IOT_STA_INIT;
@@ -335,7 +339,7 @@ int iotclient_publish(IOT_Device_t* iotdev, const char* payload, int payloadlen)
         }
         else
         {
-            DBG_MQTT_Print(("MQTTSerialize publish is error!!!,err=%d\r\n",len));
+            DBG_MQTT_Print("MQTTSerialize publish is error!!!,err=%d\r\n",len);
             return -2;
         }
 	}
@@ -370,11 +374,11 @@ static void iotclient_susb_resum(U8 flag)
 		
 		if(status == osOK)
 		{
-			DBG_MQTT_Print(("Stop MQTT rcv OK!\r\n"));
+			DBG_MQTT_Print("Stop MQTT rcv OK!\r\n");
 		}
 		else
 		{
-			WARN_PRINT(("Stop MQTT rcv fail, osThreadSuspend return %d\r\n", status));
+			DBG_MQTT_Print("Stop MQTT rcv fail, osThreadSuspend return %d\r\n", status);
 		}
 	}
 	else if(flag == TRUE)
@@ -382,11 +386,11 @@ static void iotclient_susb_resum(U8 flag)
 		status = osThreadResume(thread_iotclient_rcv_id);
 		if(status == osOK)
 		{
-			DBG_MQTT_Print(("Resume MQTT rcv OK!\r\n"));
+			DBG_MQTT_Print("Resume MQTT rcv OK!\r\n");
 		}
 		else
 		{
-			WARN_PRINT(("Resume MQTT rcv fail, osThreadResume return %d\r\n", status));
+			DBG_MQTT_Print("Resume MQTT rcv fail, osThreadResume return %d\r\n", status);
 		}
 	}
 	delay_ms(1000);
@@ -413,7 +417,7 @@ static void _iotclient_rcv_thread(void* arg)
     int msgtype = 0;
     
     int buflen = sizeof(rcvbuf);
-    
+    S32 ret=0;
     unsigned char dup;
     int qos;
     unsigned char retained;
@@ -429,7 +433,13 @@ static void _iotclient_rcv_thread(void* arg)
 
     while(1)
     {
-        if(iotDev.sta==IOT_STA_IDEL || iotRTCMDev.sta==IOT_STA_IDEL || iotCmdDev.sta==IOT_STA_IDEL)
+		if(UDPBuff.RX_flag == FALSE)//接收部标机下发设备ID
+		{
+			GLOBAL_MEMSET(UDPBuff.RX_pData,0x0,RX_LEN);
+			ret = socket_rcv_msg(SOCKET_MS,NULL,MSG_DONTWAIT,UDPBuff.RX_pData,RX_LEN);//MSG_DONTWAIT
+		}
+	
+        if(iotDev.sta==IOT_STA_IDEL &(iotRTCMDev.sta==IOT_STA_IDEL || iotCmdDev.sta==IOT_STA_IDEL))
         {
             GLOBAL_MEMSET(rcvbuf,0,sizeof(rcvbuf));
             msgtype = MQTTPacket_read(rcvbuf, buflen, transport_getdata);
@@ -476,8 +486,8 @@ static void _iotclient_rcv_thread(void* arg)
             else
             {
                 delay_ms(100);
-            }
-			delay_ms(200);
+            }		
+			delay_ms(100);
 			if(!flag){
 				HAL_GPIO_WritePin(GPIOC,GPIO_PIN_12,GPIO_PIN_SET);
 				flag = TRUE;
@@ -491,7 +501,6 @@ static void _iotclient_rcv_thread(void* arg)
             // WARN_PRINT(("rcv thread idle!!!\r\n"));
             delay_ms(1000);
         }
-        
     }
 }
 
@@ -520,7 +529,7 @@ static void _iotclient_monitor_thread(void* arg)
 
     while(1)
     {
-        delay_ms(500);
+        delay_ms(200);
 		retry_cnt = 0;
 		//对iotDev主题进行socket连接与订阅
 		while(iotDev.sta != IOT_STA_IDEL)
@@ -557,7 +566,7 @@ static void _iotclient_monitor_thread(void* arg)
 	                {
 	                    retry_cnt = 0;
 	                    iotDev.sta = IOT_STA_MQTTSUB;
-	                    DBG_MQTT_Print(("MQTT服务器iotDev连接成功!!!\r\n"));
+	                    DBG_MQTT_Print("MQTT服务器iotDev连接成功!!!\r\n");
 	                }
 	            	break;
 
@@ -578,7 +587,7 @@ static void _iotclient_monitor_thread(void* arg)
 	                {
 	                    retry_cnt = 0;
 	                    iotDev.sta = IOT_STA_IDEL;
-	                    DBG_MQTT_Print(("MQTT订阅iotDev消息成功!\r\n"));
+	                    DBG_MQTT_Print("MQTT订阅iotDev消息成功!\r\n");
 	                }
 	           		break;
 
@@ -613,6 +622,7 @@ static void _iotclient_monitor_thread(void* arg)
 	                    {
 	                        retry_cnt = 0;
 	                        iotDev.sta = IOT_STA_INIT;
+							iotRTCMDev.sta = IOT_STA_INIT;
 	                        DBG_MQTT_Print("MQTT服务器iotRTCMDev连接失败!!!\r\n");
 	                    }
 	                }
@@ -620,7 +630,7 @@ static void _iotclient_monitor_thread(void* arg)
 	                {
 	                    retry_cnt = 0;
 	                    iotRTCMDev.sta = IOT_STA_MQTTSUB;
-	                    DBG_MQTT_Print(("MQTT服务器iotRTCMDev连接成功!!!\r\n"));
+	                    DBG_MQTT_Print("MQTT服务器iotRTCMDev连接成功!!!\r\n");
 	                }
 	            	break;
 				
@@ -641,7 +651,7 @@ static void _iotclient_monitor_thread(void* arg)
 	                {
 	                    retry_cnt = 0;
 	                    iotRTCMDev.sta = IOT_STA_IDEL;
-	                    DBG_MQTT_Print(("MQTT订阅iotRTCMDev消息成功!\r\n"));
+	                    DBG_MQTT_Print("MQTT订阅iotRTCMDev消息成功!\r\n");
 	                }
 	            	break;
 				
@@ -678,6 +688,7 @@ static void _iotclient_monitor_thread(void* arg)
 	                    if(retry_cnt>3)
 	                    {
 	                        retry_cnt = 0;
+	                        iotDev.sta = IOT_STA_INIT;
 	                        iotCmdDev.sta = IOT_STA_INIT;
 	                        iotCmdDev.bMqttSub = FALSE;
     						iotCmdDev.mqttSock = -1;
@@ -688,7 +699,7 @@ static void _iotclient_monitor_thread(void* arg)
 	                {
 	                    retry_cnt = 0;
 	                    iotCmdDev.sta = IOT_STA_MQTTSUB;
-	                    DBG_MQTT_Print(("MQTT服务器iotCmdDev连接成功!!!\r\n"));
+	                    DBG_MQTT_Print("MQTT服务器iotCmdDev连接成功!!!\r\n");
 	                }
 	            	break;
 				
@@ -711,8 +722,7 @@ static void _iotclient_monitor_thread(void* arg)
 	                {
 	                    retry_cnt = 0;
 	                    iotCmdDev.sta = IOT_STA_IDEL;
-	                    DBG_MQTT_Print(("MQTT订阅iotCmdDev消息成功!\r\n"));
-						DBG_MQTT_Print(("订阅MQTT消息完成!!!\r\n"));
+	                    DBG_MQTT_Print("MQTT订阅iotCmdDev消息成功!\r\n");
 	                }
 	            	break;
 				
@@ -727,6 +737,7 @@ static void _iotclient_monitor_thread(void* arg)
 		//MQTT连接与订阅完成，恢复上报消息与接收线程
 		if(MQTT_OFF_LINE == TRUE&&iotDev.sta == IOT_STA_IDEL)
 		{
+			DBG_MQTT_Print("订阅MQTT消息完成!!!\r\n");
 			iotclient_susb_resum(RESUME_RCV);
 			MQTT_OFF_LINE = FALSE;
 		}

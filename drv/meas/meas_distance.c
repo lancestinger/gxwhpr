@@ -235,7 +235,7 @@ extern volatile u16 g_timer_cnt_100ms;
 *******************************************************************************/
 static uint64 get_tx_timestamp_u64(void);
 static uint64 get_rx_timestamp_u64(void);
-u32 calc_tx_power_config_value(u8* ptr);
+extern u32 calc_tx_power_config_value(u8* ptr);
 void init_anchor_type(void);
 void join_running_network(void);
 ret_t major_anchor(void);
@@ -261,7 +261,9 @@ void save_device_para(void)
 	FILE* fd = 0;
 	u16 crc;
 	u16 len;
-	u8 buf[100];
+	static u8 buf[100];
+
+	GLOBAL_MEMSET(buf,0x0,100);
 
 	if(g_device_config.device_type == TAG)
 	{
@@ -283,11 +285,11 @@ void save_device_para(void)
 	{
 		fwrite(buf, len, 1, fd);
 		fclose(fd);
-		DBG_PRINT(("定位参数保存成功!\r\n"));
+		GLOBAL_PRINT(("定位参数保存成功!\r\n"));
 	}
 	else
 	{
-		DBG_PRINT(("定位参数保存失败!\r\n"));
+		GLOBAL_PRINT(("定位参数保存失败!\r\n"));
 	}	
 
 }

@@ -65,6 +65,7 @@ typedef struct
 
 extern USART_TYPE UwbUart;  
 extern USART_TYPE SocketBuff;
+extern USART_TYPE UDPBuff;
 extern NMEA_TYPE NMEA_buf;
 extern NMEA_TYPE RMC_buf;
 extern USART_TYPE CacheBuff;

@@ -32,9 +32,9 @@ typedef enum
 	SOCKET_NUM,
 }socket_type_enum;
 
-#define SOCKET_COM			SOCKET_1
-#define SOCKET_BROARDCAST	SOCKET_2
-#define SOCKET_JSON         SOCKET_3
+#define SOCKET_MQTT			SOCKET_1
+#define SOCKET_NTRIP	    SOCKET_2
+#define SOCKET_MS           SOCKET_3
 
 typedef struct
 {				
@@ -46,6 +46,7 @@ typedef struct
 
 extern S32 socket_tcp_connect(socket_type_enum type);
 extern S32 socket_tcp_disconnect(socket_type_enum type);
+extern void udp_set_dst(SOCKADDR_IN* udp_dst);
 extern S32 socket_TCP_send_msg(socket_type_enum type, U8* buf, U32 len, IN S32 flag);
 extern S32 socket_UDP_send_msg(socket_type_enum type, IN SOCKADDR_IN* dst_socket, U8* buf, U32 len);
 extern S32 socket_rcv_msg(socket_type_enum type, INOUT SOCKADDR_IN* src_socket, S32 flags, INOUT U8* rcv_buf, U32 buf_len);

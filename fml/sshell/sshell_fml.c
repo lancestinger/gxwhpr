@@ -92,11 +92,15 @@ static const CHAR_T sshell_help_info1[] = {
 	"  dbg on/off                    -debug option\r\n"
 	"    position                    -debug position\r\n"	
 	"    position_warn               -debug position_warn\r\n"	
-	"    server                      -debug mqtt server\r\n"
+	"    server                      -debug server data\r\n"
+	"    GGA                         -debug NMEA GGA data\r\n"
+	"    RMC                         -debug NMEA RMC data\r\n"
+	"    RTK                         -debug RTK Position data\r\n"
+	"    ENH                         -debug Enhance Position data\r\n"
 	"    mqtt                        -enable or disable show MQTT info\r\n"
 	"    ntrip                       -enable or disable show Ntrip info\r\n"
 	"    socket                      -enable or disable show Socket info\r\n"
-	"    all                       -enable or disable show Position and Server info\r\n"		
+	"    all                         -enable or disable show Position and Server info\r\n"		
 	"  update                        -update arm firmware\r\n"
 	"  format                        -format ext spi flash\r\n"
 	"  disconnect                    -disconnect mqtt connect\r\n"
@@ -107,6 +111,7 @@ static const CHAR_T sshell_help_info1[] = {
 	"  open/close intf_sig           -open/close send uwb signal\r\n"
 	"  open/close filter             -open/close filter\r\n"
 	"  start/stop uwb                -start/stop uwb tx and rx\r\n"
+	"  start/stop Ntrip              -start/stop Ntrip thread\r\n"
 	"  start tx_power xxx xxx xxx xxx -start auto choose tx power\r\n"
 	"  stop tx_power                 -stop auto choose tx power\r\n"	
 	"  show                          -show option\r\n"
@@ -118,9 +123,8 @@ static const CHAR_T sshell_help_info1[] = {
 static const CHAR_T sshell_help_info2[] =
 {
 	"  set                       -set option\r\n"
-	"    ip xxx.xxx.xxx.xxx      -set ip data\r\n"
-  "    mask xxx.xxx.xxx.xxx    -set mask address\r\n"    
-  "    gate xxx.xxx.xxx.xxx    -set gateway address\r\n"
+    "    mask xxx.xxx.xxx.xxx    -set mask address\r\n"    
+    "    gate xxx.xxx.xxx.xxx    -set gateway address\r\n"
 	"    device_type xxx         -set device_type data\r\n"
 	"    ant_tx_delay xxx        -set ant_tx_delay data\r\n"
 	"    ant_rx_delay xxx        -set ant_rx_delay data\r\n"
@@ -132,7 +136,11 @@ static const CHAR_T sshell_help_info2[] =
 	"    anchor_h xxx            -set anchor_h data\r\n"
 	"    on_left xxx             -set on_left data\r\n"
 	"    tx_power xxx            -set tx_power data\r\n"
-	"    anchor_idle_num xxx     -set anchor_idle_num data\r\n"		
+	"    anchor_idle_num xxx     -set anchor_idle_num data\r\n"	
+	"    rtkip xxx.xxx.xxx.xxx      -set RTK ip\r\n"
+	"    MSip  xxx.xxx.xxx.xxx      -set Ministry Standard ip\r\n"
+	"    rtkport xxxx               -set RTK port\r\n"
+	"    MSport  xxxx               -set Ministry Standard port\r\n"
 };
 
 
@@ -391,7 +399,7 @@ static BOOL _sshell_excute_set_cmd(U8* ptr)
 {
 	BOOL ret = FALSE;
 
-  if(!GLOBAL_STRNCASECMP(ptr, "ip ", 3))
+	if(!GLOBAL_STRNCASECMP(ptr, "ip ", 3))
 	{
 		U8 ip_buf[NET_ADDR_IP4_LEN];
 
@@ -408,7 +416,7 @@ static BOOL _sshell_excute_set_cmd(U8* ptr)
 			ERR_PRINT(("输入IP非法!!!!\r\n"));
 		}
 	}
-  else if(!GLOBAL_STRNCASECMP(ptr, "mac ", 4))
+	else if(!GLOBAL_STRNCASECMP(ptr, "mac ", 4))
 	{
 		U8 mac_buf[10];
 
@@ -425,7 +433,7 @@ static BOOL _sshell_excute_set_cmd(U8* ptr)
 			ERR_PRINT(("输入MAC非法!!!!\r\n"));
 		}
 	}	
-  else if(!GLOBAL_STRNCASECMP(ptr, "mask ", 5))
+	else if(!GLOBAL_STRNCASECMP(ptr, "mask ", 5))
 	{
 		U8 ip_buf[NET_ADDR_IP4_LEN];
 
@@ -442,7 +450,7 @@ static BOOL _sshell_excute_set_cmd(U8* ptr)
 			ERR_PRINT(("输入MASK非法!!!!\r\n"));
 		}
 	} 
-  else if(!GLOBAL_STRNCASECMP(ptr, "gate ", 5))
+	else if(!GLOBAL_STRNCASECMP(ptr, "gate ", 5))
 	{
 		U8 ip_buf[NET_ADDR_IP4_LEN];
 
@@ -459,7 +467,7 @@ static BOOL _sshell_excute_set_cmd(U8* ptr)
 			ERR_PRINT(("输入Gateway非法!!!!\r\n"));
 		}
 	}
-  else if(!GLOBAL_STRNCASECMP(ptr, "device_type ", 12))
+	else if(!GLOBAL_STRNCASECMP(ptr, "device_type ", 12))
 	{
 		U8 buf[3] = {0};
 		GLOBAL_STRNCPY(buf, ptr+12, 1);
@@ -641,13 +649,46 @@ static BOOL _sshell_excute_set_cmd(U8* ptr)
 		GLOBAL_PRINT(("MXT config Over!!\r\n"));
 		ret = TRUE;
 	}
+	else if(!GLOBAL_STRNCASECMP(ptr, "rtkip ", 6))
+	{
+		U8 ip_buf[NET_ADDR_IP4_LEN];
 
-	
+		netIP_aton((const char*)ptr+6, NET_ADDR_IP4, ip_buf);
+		if(net_ip_is_legal(ip_buf))
+		{
+			GLOBAL_MEMCPY(main_handle_g.cfg.net.ntrip_ip,ip_buf,sizeof(main_handle_g.cfg.net.ntrip_ip));
+			sys_para_save();
+			GLOBAL_PRINT(("RTK_ntrip IP set up and save\r\n"));
+		}
+		ret = TRUE;
+	}
+	else if(!GLOBAL_STRNCASECMP(ptr, "rtkport ", 8))
+	{
+		main_handle_g.cfg.net.ntrip_port = GLOBAL_STRTOUL(ptr+8, NULL, 10);
+		sys_para_save();
+		GLOBAL_PRINT(("RTK_ntrip Port set up and save\r\n"));
+		ret = TRUE;
+	}
+	else if(!GLOBAL_STRNCASECMP(ptr, "MSip ", 5))
+	{
+		U8 ip_buf[NET_ADDR_IP4_LEN];
 
-
-	
-
-//  ret = TRUE;
+		netIP_aton((const char*)ptr+5, NET_ADDR_IP4, ip_buf);
+		if(net_ip_is_legal(ip_buf))
+		{
+			GLOBAL_MEMCPY(main_handle_g.cfg.net.MS_ip,ip_buf,sizeof(main_handle_g.cfg.net.MS_ip));
+			sys_para_save();
+			GLOBAL_PRINT(("UDP IP set up and save\r\n"));
+		}
+		ret = TRUE;
+	}
+	else if(!GLOBAL_STRNCASECMP(ptr, "MSport ", 7))
+	{
+		main_handle_g.cfg.net.MS_port = GLOBAL_STRTOUL(ptr+7, NULL, 10);
+		sys_para_save();
+		GLOBAL_PRINT(("UDP Port set up and save\r\n"));
+		ret = TRUE;
+	}
 
 	return ret;
 }
@@ -1080,23 +1121,23 @@ static BOOL _sshell_excute_debug_cmd(U8* ptr)
 		w25qxx_erase_fs_sector();
 		return TRUE;
 	}
-  else if(!GLOBAL_STRCASECMP(ptr, "disconnect"))
-  {
-    WARN_PRINT(("disconnect mqtt connect!!!\r\n"));
-    mqttDisconnect(&iotDev);
-    return TRUE;
-  }
-  else if(!GLOBAL_STRCASECMP(ptr, "sub cmd"))
-  {
-     deviceSubscribe(MQTT_CMD);
-     return TRUE;
-  }
+	else if(!GLOBAL_STRCASECMP(ptr, "disconnect"))
+	{
+	WARN_PRINT(("disconnect mqtt connect!!!\r\n"));
+	mqttDisconnect(&iotDev);
+	return TRUE;
+	}
+	else if(!GLOBAL_STRCASECMP(ptr, "sub cmd"))
+	{
+	 deviceSubscribe(MQTT_CMD);
+	 return TRUE;
+	}
 	else if(GLOBAL_STRCASECMP(ptr, "reset") == 0)
 	{
 		sys_para_reset();
 		reset_position_default_para();
-    sys_para_save();     //added by sunj 2019-10-18 14:31
-    GLOBAL_PRINT(("all parameters have been reset and saved\r\n"));
+    	sys_para_save();     //added by sunj 2019-10-18 14:31
+   		GLOBAL_PRINT(("all parameters have been reset and saved\r\n"));
 		return TRUE;
 	}
 	else if(GLOBAL_STRCASECMP(ptr, "reboot") == 0)
@@ -1276,6 +1317,11 @@ static BOOL _sshell_excute_debug_cmd(U8* ptr)
 	{
 		RTCM_SWITCH = NTRIP_GET_RTCM;
 		GLOBAL_PRINT(("Resume Ntrip is OK!\r\n"));
+		return TRUE;
+	}
+	else if(!GLOBAL_STRNCASECMP(ptr, "ntrip reboot", 12))
+	{
+		Ntrip_State = NTRIP_INIT;
 		return TRUE;
 	}
 	else if(!GLOBAL_STRNCASECMP(ptr, "mqtt log on", 11))

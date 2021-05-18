@@ -36,6 +36,7 @@ static uart_rx_callback_def uart_rx_callback[UART_COM_NUM];
 
 USART_TYPE UwbUart = {.RX_flag=0,};
 USART_TYPE SocketBuff = {.RX_flag=0,};
+USART_TYPE UDPBuff = {.RX_flag=0,};
 NMEA_TYPE NMEA_buf = {.RX_flag=0,};
 NMEA_TYPE RMC_buf = {.RX_flag=0,};
 USART_TYPE CacheBuff = {.RX_flag=0,};

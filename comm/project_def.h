@@ -154,38 +154,17 @@ typedef struct
 	U8 net_mac[6];
 	U8 server_ip[4];
 	U16 server_port;
+	U8 ntrip_ip[4];
+	U16 ntrip_port;
+	U8 MS_ip[4];
+	U16 MS_port;
 }net_para_t;
 
 typedef struct
 {
 	U8 ubx_enable;
 	S8 gps_leap_sec;				//GPS闰秒数
-	// S8 time_zone;					//时区
-	// U8 pl_start_enable;			    //伪卫星上电自启
-//	ref_type_enum ref_sel;			//参考源选择
-//	ref_switch_enum ref_sw_mode;	//切换模式
-//	S32 ocxo_voltage[OCXO_NUM];	    //压控电压
-//	lla_t usr_lla;					//用户位置
-	// F32 el;							//截止角
-	// F32 max_speed;					//最大速度
-//	F32 atten[4];			//衰减值
-//	F32 delay[4];
-//	circle_para_t circle_para;		//圆周运动参数
-//	head_speed_t speed_para;		//直线运动参数
-//	head_acc_t accspeed_para;		//加速度参数
 	net_para_t net;					//网络参数
-    // U32 work_model;                 //工作模式 0表示GPS&GLONASS 1表示GPS&BDS&GLONASS
-    // U32 pl_auto_time_enable;        //伪卫星自动授时使能
-    // U32 circle_curPos_enable;       //使用当前定位位置作为圆心进行圆周运动使能
-    // U8 sendIP1[4];                  //发送IP1
-    // U8 sendIP2[4];                  //发送IP2
-    // U32 devInfoSendCycle;           //发送状态巡检信息周期
-    // F32 atten_lim[4];        //通道功率衰减最小设置
-    // F32 atten_offset[4][12];
-    // U8 transCtrlMode;               //发射控制模式(安则)
-    // U8 antsup;                      //天线馈电状态
-    // U8 reserved2;                   //保留
-    // U8 reserved3;                   //保留
 	U32 crc;
 }cfg_para_t;
 
