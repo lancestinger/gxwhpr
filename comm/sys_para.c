@@ -1,9 +1,7 @@
 
 #include "project_def.h"
 #include "crc/crc.h"
-
-
-
+#include "apl/Ntrip/Ntrip.h"
 
 
 main_handle_t main_handle_g;	//主操作对象
@@ -35,6 +33,8 @@ static const cfg_para_t default_cfg_para =
         8001,                               //NTRIP服务器端口号
         192,168,10,158,
         9099, 
+        MOUNT,
+        USER_CODE,
 	}, 
 
 };

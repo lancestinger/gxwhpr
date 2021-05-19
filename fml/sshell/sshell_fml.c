@@ -656,6 +656,7 @@ static BOOL _sshell_excute_set_cmd(U8* ptr)
 		netIP_aton((const char*)ptr+6, NET_ADDR_IP4, ip_buf);
 		if(net_ip_is_legal(ip_buf))
 		{
+			GLOBAL_MEMSET(main_handle_g.cfg.net.ntrip_ip,0x0,sizeof(main_handle_g.cfg.net.ntrip_ip));
 			GLOBAL_MEMCPY(main_handle_g.cfg.net.ntrip_ip,ip_buf,sizeof(main_handle_g.cfg.net.ntrip_ip));
 			sys_para_save();
 			GLOBAL_PRINT(("RTK_ntrip IP set up and save\r\n"));
@@ -675,7 +676,8 @@ static BOOL _sshell_excute_set_cmd(U8* ptr)
 
 		netIP_aton((const char*)ptr+5, NET_ADDR_IP4, ip_buf);
 		if(net_ip_is_legal(ip_buf))
-		{
+		{			
+			GLOBAL_MEMSET(main_handle_g.cfg.net.MS_ip,0x0,sizeof(main_handle_g.cfg.net.MS_ip));
 			GLOBAL_MEMCPY(main_handle_g.cfg.net.MS_ip,ip_buf,sizeof(main_handle_g.cfg.net.MS_ip));
 			sys_para_save();
 			GLOBAL_PRINT(("UDP IP set up and save\r\n"));
@@ -689,6 +691,23 @@ static BOOL _sshell_excute_set_cmd(U8* ptr)
 		GLOBAL_PRINT(("UDP Port set up and save\r\n"));
 		ret = TRUE;
 	}
+	else if(!GLOBAL_STRNCASECMP(ptr, "mount ", 6))
+	{
+		GLOBAL_MEMSET(main_handle_g.cfg.net.Ntrip_mount,0x0,strlen(main_handle_g.cfg.net.Ntrip_mount));
+		GLOBAL_MEMCPY(main_handle_g.cfg.net.Ntrip_mount,ptr+6,strlen(ptr+6));
+		GLOBAL_PRINT(("set Ntrip_Mount = %s\r\n",main_handle_g.cfg.net.Ntrip_mount));
+		sys_para_save();
+		ret = TRUE;
+	}
+	else if(!GLOBAL_STRNCASECMP(ptr, "userpass ", 9))
+	{
+		GLOBAL_MEMSET(main_handle_g.cfg.net.Ntrip_usr_pass,0x0,sizeof(main_handle_g.cfg.net.Ntrip_usr_pass));
+		GLOBAL_MEMCPY(main_handle_g.cfg.net.Ntrip_usr_pass,ptr+9,strlen(ptr+9));
+		GLOBAL_PRINT(("set Ntrip_user_pass = %s\r\n",main_handle_g.cfg.net.Ntrip_usr_pass));
+		sys_para_save();
+		ret = TRUE;
+	}
+
 
 	return ret;
 }

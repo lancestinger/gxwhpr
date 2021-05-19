@@ -36,7 +36,7 @@
 //beta°æ±¾
 #define SW_VERSION_H		1
 #define SW_VERSION_M		9
-#define SW_VERSION_L		28
+#define SW_VERSION_L		29
 
 
 

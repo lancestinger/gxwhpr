@@ -152,12 +152,14 @@ typedef struct
 	U8 net_mask[4];
 	U8 net_gateway[4];
 	U8 net_mac[6];
-	U8 server_ip[4];
-	U16 server_port;
-	U8 ntrip_ip[4];
-	U16 ntrip_port;
-	U8 MS_ip[4];
-	U16 MS_port;
+	U8 server_ip[4];     //MQTT服务器IP地址
+	U16 server_port;     //MQTT服务器端口号
+	U8 ntrip_ip[4];      //Ntrip IP地址
+	U16 ntrip_port;      //Ntrip端口号
+	U8 MS_ip[4];         //部标机IP地址
+	U16 MS_port;         //部标机端口号
+	char Ntrip_mount[50];
+	char Ntrip_usr_pass[50];
 }net_para_t;
 
 typedef struct

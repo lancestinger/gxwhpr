@@ -26,6 +26,9 @@ static const osThreadAttr_t thread_Ntrip_monitor_attr = {
 static U8 TCP_INIT_FAILED = FALSE;
 static U8 NTRIP_INIT_FAILED = FALSE;
 
+char Ntrip_Mount[] = MOUNT;	  //Ntrip默认挂载点
+char Ntrip_user_code[] = USER_CODE;//Ntrip默认账号密码
+
 osThreadId_t thread_Ntrip_id = 0;
 
 NTRIP_WorkState_t Ntrip_State = NTRIP_INIT;
@@ -77,22 +80,32 @@ void Ntrip_TCP_Init(void)
 *****************************************************************************/
 void Ntrip_QX_Connect(void)
 {
-	static char *Ntrip_connect_buff = "GET /RTCM32_GGB HTTP/1.0\r\nUser-Agent: NTRIP GNSSInternetRadio/1.4.10\r\nAccept: */*\r\nConnection: close\r\nAuthorization: Basic cXh1dG11MDAyOmUxMWE3OTc=\r\n\r\n";
+	//static char *Ntrip_connect_buff = "GET /RTCM32_GGB HTTP/1.0\r\nUser-Agent: NTRIP GNSSInternetRadio/1.4.10\r\nAccept: */*\r\nConnection: close\r\nAuthorization: Basic cXh1dG11MDAyOmUxMWE3OTc=\r\n\r\n";
 
+	char* Ntrip_connect_buff = (char*)GLOBAL_MALLOC(NTRIP_CODE_LEN);
+	GLOBAL_MEMSET(Ntrip_connect_buff,0x0,NTRIP_CODE_LEN);
+
+	sprintf(Ntrip_connect_buff,"GET /%s HTTP/1.0\r\nUser-Agent: NTRIP GNSSInternetRadio/1.4.10\r\nAccept: */*\r\nConnection: close\r\nAuthorization: Basic %s\r\n\r\n",\
+		main_handle_g.cfg.net.Ntrip_mount,\
+		main_handle_g.cfg.net.Ntrip_usr_pass);
+	
+	DBG_NTRIP_Print("Ntrip_connect_buff: \r\n%s\r\n",Ntrip_connect_buff);
+	
 	if(TCP_INIT_FAILED == FALSE)
 	{
 		if( 0 >= socket_TCP_send_msg(SOCKET_2,(U8*)Ntrip_connect_buff,strlen(Ntrip_connect_buff),0))
 		{
 			NTRIP_INIT_FAILED = TRUE;
 			delay_ms(10);
-			DBG_NTRIP_Print("Ntrip QX connect Overtime!!\r\n");
+			DBG_NTRIP_Print("Ntrip Caster connect Overtime!!\r\n");
 		}
 		else
 		{
 			NTRIP_INIT_FAILED = FALSE;
-			DBG_NTRIP_Print("Ntrip QX connect OK!!\r\n");
+			DBG_NTRIP_Print("Ntrip Caster connect OK!!\r\n");
 		}
 	}
+	free(Ntrip_connect_buff);
 }
 
 /*****************************************************************************
@@ -249,8 +262,15 @@ static void _Ntrip_thread(void* arg)
 					else
 					{
 						RTCM_DATA_ERROR = 1;
-						DBG_NTRIP_Print("%s\r\n",SocketBuff.RX_pData);
-						DBG_NTRIP_Print("RTCM data too short!\r\n");
+						if(strcmp(SocketBuff.RX_pData,"ICY 200 OK")>=0)
+						{
+							DBG_NTRIP_Print("Ntrip连接成功!!\r\n");
+						}
+						else
+						{
+							DBG_NTRIP_Print("RTCM data too short!\r\n");
+							DBG_NTRIP_Print("Rcv = %s\r\n",SocketBuff.RX_pData);
+						}
 						//Ntrip_State = NTRIP_INIT;
 					}
 				}
