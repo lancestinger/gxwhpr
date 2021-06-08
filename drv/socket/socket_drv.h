@@ -23,6 +23,7 @@
 #include "pubdef.h"
 #include "rl_net.h"
 
+extern int Net_lock;
 
 typedef enum
 {
@@ -46,7 +47,7 @@ typedef struct
 
 extern S32 socket_tcp_connect(socket_type_enum type);
 extern S32 socket_tcp_disconnect(socket_type_enum type);
-extern void udp_set_dst(SOCKADDR_IN* udp_dst);
+extern void udp_send_ms(char* out, size_t len_out);
 extern S32 socket_TCP_send_msg(socket_type_enum type, U8* buf, U32 len, IN S32 flag);
 extern S32 socket_UDP_send_msg(socket_type_enum type, IN SOCKADDR_IN* dst_socket, U8* buf, U32 len);
 extern S32 socket_rcv_msg(socket_type_enum type, INOUT SOCKADDR_IN* src_socket, S32 flags, INOUT U8* rcv_buf, U32 buf_len);

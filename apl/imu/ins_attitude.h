@@ -28,11 +28,11 @@ void ins_AttitUpdate(const imu_data_t *pGyroData, float dt);
 
 void ins_AttiGetRb2L(double Rb2L[]);
 
-void ins_AttiClibBySnsr(imu_data_t AcceData[], imu_data_t MagData[]);
+void ins_AttiClibBySnsr(int epoch, imu_data_t AcceData[], imu_data_t MagData[]);
 
-void ins_HeadingCalibOuter(float heading);
+void ins_HeadingCalibOuter(int epoch, float heading);
 
-
+int GetAttitude_From_AcceMag(imu_data_t AcceData[], imu_data_t MagData[], ins_atti_t* pAtti);
 
 #ifdef __cplusplus
 }

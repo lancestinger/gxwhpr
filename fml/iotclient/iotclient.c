@@ -442,7 +442,7 @@ static void _iotclient_rcv_thread(void* arg)
         if(iotDev.sta==IOT_STA_IDEL &(iotRTCMDev.sta==IOT_STA_IDEL || iotCmdDev.sta==IOT_STA_IDEL))
         {
             GLOBAL_MEMSET(rcvbuf,0,sizeof(rcvbuf));
-            msgtype = MQTTPacket_read(rcvbuf, buflen, transport_getdata);
+            msgtype = MQTTPacket_read(rcvbuf, buflen, transport_getdatanb);
 
             if(msgtype!=-1)
             {
@@ -465,11 +465,13 @@ static void _iotclient_rcv_thread(void* arg)
 						}
 						else if(strcmp(Rcv_topic,iotDev.subTopicName) == 0)
 						{
+							//str_len = base64_decode(payload_in,dedata);
 							DBG_MQTT_Print("iotDev消息接收成功!!! %.*s\r\n", payloadlen_in, payload_in);
 	                        parse_server_data(payload_in,payloadlen_in);
 						}
 						else if(strcmp(Rcv_topic,iotCmdDev.subTopicName) == 0)
 						{
+							//str_len = base64_decode(payload_in,dedata);
 							DBG_MQTT_Print("iotCmdDev消息接收成功!!! %.*s\r\n", payloadlen_in, payload_in);
 							Cmd_parse_data(payload_in, payloadlen_in);
 						}
@@ -485,9 +487,9 @@ static void _iotclient_rcv_thread(void* arg)
             }
             else
             {
-                delay_ms(100);
+                delay_ms(200);
             }		
-			delay_ms(100);
+			delay_ms(300);
 			if(!flag){
 				HAL_GPIO_WritePin(GPIOC,GPIO_PIN_12,GPIO_PIN_SET);
 				flag = TRUE;
@@ -499,8 +501,9 @@ static void _iotclient_rcv_thread(void* arg)
         else
         {
             // WARN_PRINT(("rcv thread idle!!!\r\n"));
-            delay_ms(1000);
+            delay_ms(500);
         }
+		//osThreadYield();
     }
 }
 
@@ -741,6 +744,7 @@ static void _iotclient_monitor_thread(void* arg)
 			iotclient_susb_resum(RESUME_RCV);
 			MQTT_OFF_LINE = FALSE;
 		}
+		//osThreadYield();
     }
 }
 

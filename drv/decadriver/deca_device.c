@@ -14,8 +14,8 @@
 #include "deca_param_types.h"
 #include "deca_regs.h"
 #include "deca_device_api.h"
-#include "platform/deca/deca_sleep.h"
-#include "platform/port/port.h"
+#include "deca_plat/deca/deca_sleep.h"
+#include "deca_plat/port/port.h"
 
 // Defines for enable_clocks function
 #define FORCE_SYS_XTI  0
@@ -761,10 +761,10 @@ void dwt_readaccdata(uint8 *buffer, uint16 len, uint16 accOffset)
 void dwt_readdiagnostics(dwt_rxdiag_t *diagnostics)
 {
     // Read the HW FP index
-    diagnostics->firstPath = dwt_read16bitoffsetreg(RX_TIME_ID, RX_TIME_FP_INDEX_OFFSET);
+  //  diagnostics->firstPath = dwt_read16bitoffsetreg(RX_TIME_ID, RX_TIME_FP_INDEX_OFFSET);
 
     // LDE diagnostic data
-    diagnostics->maxNoise = dwt_read16bitoffsetreg(LDE_IF_ID, LDE_THRESH_OFFSET);
+  //  diagnostics->maxNoise = dwt_read16bitoffsetreg(LDE_IF_ID, LDE_THRESH_OFFSET);
 
     // Read all 8 bytes in one SPI transaction
     dwt_readfromdevice(RX_FQUAL_ID, 0x0, 8, (uint8*)&diagnostics->stdNoise);

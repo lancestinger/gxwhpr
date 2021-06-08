@@ -43,13 +43,14 @@
 #include "gpio/gpio_drv.h"
 #include "gnss/ubx.h"
 #include "update/update_apl.h"
-#include "drv/meas/meas_distance.h"
+#include "uwb_post/uwb_post.h"
 #include "fml/gnss/nmea.h"
 #include "apl/server/server_apl.h"
 #include "apl/uwb/uwb.h"
 #include "iotclient/iotclient.h"
 #include "apl/Ntrip/Ntrip.h"
 #include "drv/socket/socket_drv.h"
+#include "fml/dnsclient/DNS.h"
 
 /*------------------------------头文件------------------------------*/
 
@@ -86,61 +87,77 @@ static const osThreadAttr_t thread_sshell_attr = {
 };
 static const U8 key_up[3] = {0x1B, 0x5B, 0x41};
 static const U8 key_down[3] = {0x1B, 0x5B, 0x42};
+
+
 static const CHAR_T sshell_help_info1[] = {
 	"***Command***                     ***Detail***\r\n"
 	"  sysinfo                       -show sysinfo\r\n"
 	"  dbg on/off                    -debug option\r\n"
-	"    position                    -debug position\r\n"	
-	"    position_warn               -debug position_warn\r\n"	
-	"    server                      -debug server data\r\n"
+	"    efs_gen                     -debug efs general info\r\n"	
+	"    efs_post                    -debug efs position info\r\n"
+	"    efs_post_note               -debug efs position note info\r\n"
+	"    efs_rg                      -debug efs ranging info\r\n"	
+	"    efs_rssi                    -debug efs signal rssi\r\n"
+	"    efs_err                     -debug efs error info\r\n"
+	"    server                      -debug mqtt server\r\n"	
+	"  update                        -update arm firmware\r\n"
+	"  format                        -format ext spi flash\r\n"
+	"  disconnect                    -disconnect mqtt connect\r\n"
+	"  sub                           -subscribe\r\n"
+	"  open/close rg                 -open/close efs ranging\r\n"
+	"  open/close det_sig            -open/close detection efs signal\r\n"
+	"  open/close intf_sig           -open/close send efs signal\r\n"
+	"  open/close filter             -open/close filter\r\n"
+	"  open/close efs                -open/close efs tx and rx\r\n"
+	"  open tx_power xxx xxx xxx xxx -open auto choose tx power\r\n"
+	"  close tx_power                -close auto choose tx power\r\n"
+	"  open ant_cal xxx xxx          -open auto calibration of antenna delay\r\n"
+	"  close ant_cal                 -close auto calibration of antenna delay\r\n"
+	"  show                          -show option\r\n"
+	"    ip                          -show ip info\r\n"	
+	"    post_para                   -show post para\r\n"
+	"    anchor_state                -show anchor head or tail state\r\n"	
+};
+
+static const CHAR_T sshell_help_info2[] =
+{
+	"  set                       -set option\r\n"
+	"    ip xxx.xxx.xxx.xxx      -set ip data\r\n"
+	"    mask xxx.xxx.xxx.xxx    -set mask address\r\n"    
+	"    gate xxx.xxx.xxx.xxx    -set gateway address\r\n"
+	"    device_type xxx         -set device_type data\r\n"
+	"    ant_delay xxx           -set ant_delay data\r\n"
+	"    tag_id xxx              -set tag_id data\r\n"
+	"    anchor_coord xxx xxx xxx -set anchor_coord latitude longitude height\r\n"
+	"    ref_coord xxx xxx xxx   -set ref_coord latitude longitude height\r\n"
+	"    sig_qa_thr xxx          -set sig_qa_thr data\r\n" 
+	"    t2wall_d xxx            -set t2wall_d data\r\n"	
+	"    t2wall_thr xxx          -set t2wall_thr data\r\n"
+	"    t2wall_fl_num xxx       -set t2wall_fl_num data\r\n"
+	"    tx_power xxx            -set tx_power data\r\n"
+	"    anchor_idle_num xxx     -set anchor_idle_num data\r\n"	
+	"    rtkip xxx.xxx.xxx.xxx      -set RTK ip or realm\r\n"
+	"    MSip  xxx.xxx.xxx.xxx      -set Ministry Standard ip\r\n"
+	"    mqttip xxx.xxx.xxx.xxx     -set MQTT server ip or realm\r\n"
+	"    rtkport xxxx               -set RTK port\r\n"
+	"    MSport  xxxx               -set Ministry Standard port\r\n"
+	"    MQTTport xxxx              -set MQTT server port\r\n"
+};
+
+
+static const CHAR_T sshell_help_info3[] = {
+	"  dbg on/off                    -debug option\r\n"	
+	"    socket                      -enable or disable show Socket info\r\n"
+	"    all                         -enable or disable show Position and Server info\r\n"		
 	"    GGA                         -debug NMEA GGA data\r\n"
 	"    RMC                         -debug NMEA RMC data\r\n"
 	"    RTK                         -debug RTK Position data\r\n"
 	"    ENH                         -debug Enhance Position data\r\n"
 	"    mqtt                        -enable or disable show MQTT info\r\n"
 	"    ntrip                       -enable or disable show Ntrip info\r\n"
-	"    socket                      -enable or disable show Socket info\r\n"
-	"    all                         -enable or disable show Position and Server info\r\n"		
-	"  update                        -update arm firmware\r\n"
-	"  format                        -format ext spi flash\r\n"
-	"  disconnect                    -disconnect mqtt connect\r\n"
-	"  sub                           -subscribe\r\n"
-	"  open/close ranging            -open/close uwb ranging\r\n"
-	"  open/close det_sig            -open/close detection uwb signal\r\n"
-	"  open/close det_sig            -open/close detection uwb signal\r\n"
-	"  open/close intf_sig           -open/close send uwb signal\r\n"
-	"  open/close filter             -open/close filter\r\n"
-	"  start/stop uwb                -start/stop uwb tx and rx\r\n"
-	"  start/stop Ntrip              -start/stop Ntrip thread\r\n"
-	"  start tx_power xxx xxx xxx xxx -start auto choose tx power\r\n"
-	"  stop tx_power                 -stop auto choose tx power\r\n"	
-	"  show                          -show option\r\n"
-	"    ip                          -show ip info\r\n"	
-	"    position                    -show uwb position info\r\n"
-	
-};
-
-static const CHAR_T sshell_help_info2[] =
-{
-	"  set                       -set option\r\n"
-    "    mask xxx.xxx.xxx.xxx    -set mask address\r\n"    
-    "    gate xxx.xxx.xxx.xxx    -set gateway address\r\n"
-	"    device_type xxx         -set device_type data\r\n"
-	"    ant_tx_delay xxx        -set ant_tx_delay data\r\n"
-	"    ant_rx_delay xxx        -set ant_rx_delay data\r\n"
-	"    tag_id xxx              -set tag_id data\r\n"
-	"    position xxx xxx xxx    -set position latitude longitude height\r\n"
-	"    ref_position xxx xxx xxx -set ref_position latitude longitude height\r\n"
-	"    t2wall_d xxx            -set t2wall_d data\r\n"	
-	"    t2wall_t xxx            -set t2wall_t data\r\n"		
-	"    anchor_h xxx            -set anchor_h data\r\n"
-	"    on_left xxx             -set on_left data\r\n"
-	"    tx_power xxx            -set tx_power data\r\n"
-	"    anchor_idle_num xxx     -set anchor_idle_num data\r\n"	
-	"    rtkip xxx.xxx.xxx.xxx      -set RTK ip\r\n"
-	"    MSip  xxx.xxx.xxx.xxx      -set Ministry Standard ip\r\n"
-	"    rtkport xxxx               -set RTK port\r\n"
-	"    MSport  xxxx               -set Ministry Standard port\r\n"
+	"    IMU                         -enable or disable show IMU info\r\n"
+	"    IMURAW                      -enable or disable show IMU raw_data\r\n"
+	"  start/stop Ntrip              -start/stop Ntrip thread\r\n"		  
 };
 
 
@@ -186,6 +203,7 @@ extern UPDATE_HANDLE update_handle_g;
 
 /*------------------------------函数声明------------------------------*/
 #define SSHELL_HELP_INFO() GLOBAL_PRINT(("%s", sshell_help_info1));delay_ms(300);\
+							GLOBAL_PRINT(("%s", sshell_help_info3));delay_ms(300);\
 							GLOBAL_PRINT(("%s", sshell_help_info2));delay_ms(300);\
 							GLOBAL_PRINT(("%s", sshell_help_info4));delay_ms(300);\
 
@@ -479,20 +497,17 @@ static BOOL _sshell_excute_set_cmd(U8* ptr)
 		save_device_para();
 		ret = TRUE;
 	}	
-	else if(!GLOBAL_STRNCASECMP(ptr, "ant_tx_delay ", 13))
+	else if(!GLOBAL_STRNCASECMP(ptr, "ant_delay ", 10))
 	{
-		g_device_config.ant_tx_delay = GLOBAL_STRTOUL(ptr+13, NULL, 10);
-		dwt_setrxantennadelay(g_device_config.ant_tx_delay);   
+		u16 ant_delay_dist;
+		
+		ant_delay_dist = GLOBAL_STRTOUL(ptr+10, NULL, 10);
+		g_device_config.ant_delay = antDist2antDelay(ant_delay_dist);
+		GLOBAL_PRINT(("ant_delay cnt: %u\r\n", g_device_config.ant_delay));
+		dwt_setrxantennadelay(g_device_config.ant_delay);
+		dwt_settxantennadelay(g_device_config.ant_delay);
 		save_device_para();
 		ret = TRUE;
-	} 
-	else if(!GLOBAL_STRNCASECMP(ptr, "ant_rx_delay ", 13))
-	{	
-		g_device_config.ant_rx_delay = GLOBAL_STRTOUL(ptr+13, NULL, 10);
-		dwt_setrxantennadelay(g_device_config.ant_rx_delay);   
-		save_device_para();
-		ret = TRUE;
-
 	} 	
 	else if(!GLOBAL_STRNCASECMP(ptr, "anchor_id ", 10))
 	{
@@ -500,22 +515,22 @@ static BOOL _sshell_excute_set_cmd(U8* ptr)
 		save_device_para();
 		ret = TRUE;
 	}
-	else if(!GLOBAL_STRNCASECMP(ptr, "position ", 9))
+	else if(!GLOBAL_STRNCASECMP(ptr, "anchor_coord ", 13))
 	{
 		char *p_end;
 
-		g_device_config.position[0] = GLOBAL_STRTOD(ptr+9, &p_end);
+		g_device_config.position[0] = GLOBAL_STRTOD(ptr+13, &p_end);
 		g_device_config.position[1] = GLOBAL_STRTOD(p_end, &p_end);
 		g_device_config.position[2] = GLOBAL_STRTOD(p_end, &p_end);
 
 		save_device_para();
 		ret = TRUE;
 	}
-	else if(!GLOBAL_STRNCASECMP(ptr, "ref_position ", 13))
+	else if(!GLOBAL_STRNCASECMP(ptr, "ref_coord ", 10))
 	{
 		char *p_end;
 
-		g_device_config.ref_position[0] = GLOBAL_STRTOD(ptr+13, &p_end);
+		g_device_config.ref_position[0] = GLOBAL_STRTOD(ptr+10, &p_end);
 		g_device_config.ref_position[1] = GLOBAL_STRTOD(p_end, &p_end);
 		g_device_config.ref_position[2] = GLOBAL_STRTOD(p_end, &p_end);
 
@@ -529,14 +544,100 @@ static BOOL _sshell_excute_set_cmd(U8* ptr)
 
 		save_device_para();
 		ret = TRUE;
-	}
-	else if(!GLOBAL_STRNCASECMP(ptr, "t2wall_t ", 9)) 
-	{  
-		char *p_end;  
-		g_device_config.t2wall_threshold = GLOBAL_STRTOD(ptr+9, &p_end);  
-		save_device_para();  
-		ret = TRUE; 
-	}
+	}	
+	else if(!GLOBAL_STRNCASECMP(ptr, "t2wall_thr ", 11))
+	{
+		char *p_end;
+		g_device_config.t2wall_threshold = GLOBAL_STRTOD(ptr+11, &p_end);
+
+		save_device_para();
+		ret = TRUE;
+	}	
+	else if(!GLOBAL_STRNCASECMP(ptr, "t2wall_fl_num ", 14))
+	{
+		char *p_end;
+		u8 t2wall_fl_num;
+		
+		reset_queue();
+		t2wall_fl_num = GLOBAL_STRTOD(ptr+14, &p_end);
+		if(t2wall_fl_num <= 0)
+		{
+			GLOBAL_PRINT(("set value is invalid,no allow zero\r\n"));
+		}
+		else
+		{
+			g_device_config.t2wall_fl_num = t2wall_fl_num;
+		}
+
+		save_device_para();
+		ret = TRUE;
+	}		
+	else if(!GLOBAL_STRNCASECMP(ptr, "max_tag_num ", 12))
+	{
+		char *p_end;
+		u16 max_tag_num;
+
+		max_tag_num = GLOBAL_STRTOD(ptr+12, &p_end);
+		if(max_tag_num <= 0)
+		{
+			GLOBAL_PRINT(("set value is invalid,no allow zero\r\n"));
+		}
+		else
+		{
+			g_device_config.max_allow_tag_num = max_tag_num;
+		}
+
+		save_device_para();
+		ret = TRUE;
+	}	
+	else if(!GLOBAL_STRNCASECMP(ptr, "dyn_slot_long ", 14))
+	{
+		char *p_end;
+		u16 dyn_slot_long;
+
+		dyn_slot_long = GLOBAL_STRTOD(ptr+14, &p_end);
+		if(dyn_slot_long <= 0)
+		{
+			GLOBAL_PRINT(("set value is invalid,no allow zero\r\n"));
+		}
+		else
+		{
+			g_device_config.dyn_slot_long = dyn_slot_long;
+		}
+
+		save_device_para();
+		ret = TRUE;
+	}		
+	else if(!GLOBAL_STRNCASECMP(ptr, "rg_slot_long ", 13))
+	{
+		char *p_end;
+		u16 rg_slot_long;
+
+		rg_slot_long = GLOBAL_STRTOD(ptr+13, &p_end);
+		if(rg_slot_long <= 0)
+		{
+			GLOBAL_PRINT(("set value is invalid,no allow zero\r\n"));
+		}
+		else
+		{
+			g_device_config.ranging_slot_long = rg_slot_long;
+		}
+
+		save_device_para();
+		ret = TRUE;
+	}		
+
+
+	
+	else if(!GLOBAL_STRNCASECMP(ptr, "sig_qa_thr ", 11))
+	{
+		char *p_end;
+		g_device_config.sig_qa_thr = GLOBAL_STRTOD(ptr+11, &p_end);
+
+		save_device_para();
+		ret = TRUE;
+	}	
+	
 	else if(!GLOBAL_STRNCASECMP(ptr, "tag_h ", 6))
 	{
 		char *p_end;
@@ -581,22 +682,23 @@ static BOOL _sshell_excute_set_cmd(U8* ptr)
 			g_device_config.tx_power = tx_power;
 			save_device_para();	
 			db = calc_tx_power_config_value_to_db(g_device_config.tx_power);
-			GLOBAL_PRINT(("tx_power config is suc, tx_power: %2.1f db\r\n",  db));
-			ret = TRUE;
+			GLOBAL_PRINT(("tx_power config is suc, tx_power: %2.1f db\r\n",  db));			
 		}
 		else
 		{
 			ERR_PRINT(("tx_power config is failed\r\n"));
 		}
+
+		ret = TRUE;
 				
 	}
 
 	else if(!GLOBAL_STRNCASECMP(ptr, "anchor_idle_num ", 16))
 	{
 		g_device_config.anchor_idle_num = GLOBAL_STRTOUL(ptr+16, NULL, 10);
-		if(g_device_config.anchor_idle_num < 1 || g_device_config.anchor_idle_num > 2)
+		if(g_device_config.anchor_idle_num < 1 || g_device_config.anchor_idle_num > 5)
 		{
-			g_device_config.anchor_idle_num = 1;
+			g_device_config.anchor_idle_num = 2;
 		}
 		
 		save_device_para();
@@ -615,11 +717,11 @@ static BOOL _sshell_excute_set_cmd(U8* ptr)
 			osStatus_t status = osThreadSuspend(thread_UWB_id);
 			if(status == osOK)
 			{
-				GLOBAL_PRINT(("stop uwb is suc\r\n"));
+				GLOBAL_PRINT(("stop efs is suc\r\n"));
 			}
 			else
 			{
-				GLOBAL_PRINT(("stop uwb is fail,osThreadSuspend return %d\r\n", status));
+				GLOBAL_PRINT(("stop efs is fail,osThreadSuspend return %d\r\n", status));
 				return TRUE;
 			}			
 			
@@ -630,11 +732,11 @@ static BOOL _sshell_excute_set_cmd(U8* ptr)
 			status = osThreadResume(thread_UWB_id);
 			if(status == osOK)
 			{
-				GLOBAL_PRINT(("start uwb is suc\r\n"));
+				GLOBAL_PRINT(("start efs is suc\r\n"));
 			}
 			else
 			{
-				GLOBAL_PRINT(("start uwb is fail,osThreadResume return %d\r\n", status));
+				GLOBAL_PRINT(("start efs is fail,osThreadResume return %d\r\n", status));
 			}
 			
 		}
@@ -649,17 +751,70 @@ static BOOL _sshell_excute_set_cmd(U8* ptr)
 		GLOBAL_PRINT(("MXT config Over!!\r\n"));
 		ret = TRUE;
 	}
+	else if(!GLOBAL_STRNCASECMP(ptr, "mqttip ", 7))//MQTT修改域名/解析
+	{
+		U8 ip_buf[NET_ADDR_IP4_LEN];
+		U32 timeout = 100;
+		DNS_GetHost((const char*)ptr+7);//testing
+		while(timeout--)
+		{
+			if(DNS_buff.dns_flag)
+			{
+				netIP_aton((const char*)DNS_buff.dns_ip, NET_ADDR_IP4, ip_buf);
+				if(net_ip_is_legal(ip_buf))
+				{
+					GLOBAL_MEMSET(main_handle_g.cfg.net.server_ip,0x0,sizeof(main_handle_g.cfg.net.server_ip));
+					GLOBAL_MEMCPY(main_handle_g.cfg.net.server_ip,ip_buf,sizeof(main_handle_g.cfg.net.server_ip));
+					sys_para_save();
+					GLOBAL_PRINT(("MQTT_server IP set up and save\r\n"));
+					GLOBAL_PRINT(("MQTT_now Reconnecting!!\r\n"));
+					MQTT_OFF_LINE = TRUE;
+	                iotDev.sta = IOT_STA_INIT;
+					iotRTCMDev.sta = IOT_STA_INIT;
+					iotCmdDev.sta= IOT_STA_INIT;
+				}
+				break;
+			}
+			delay_ms(100);
+			if(timeout<=1)
+			{
+				ERR_PRINT(("MQTT IP set Time out!!\r\n"));
+			}
+		}
+		ret = TRUE;
+	}
+	else if(!GLOBAL_STRNCASECMP(ptr, "mqttport ", 9))
+	{
+		main_handle_g.cfg.net.server_port = GLOBAL_STRTOUL(ptr+9, NULL, 10);
+		sys_para_save();
+		GLOBAL_PRINT(("MQTT_server Port set up and save\r\n"));
+		ret = TRUE;
+	}
 	else if(!GLOBAL_STRNCASECMP(ptr, "rtkip ", 6))
 	{
 		U8 ip_buf[NET_ADDR_IP4_LEN];
-
-		netIP_aton((const char*)ptr+6, NET_ADDR_IP4, ip_buf);
-		if(net_ip_is_legal(ip_buf))
+		U32 timeout = 100;
+		DNS_GetHost((const char*)ptr+6);//testing
+		while(timeout--)
 		{
-			GLOBAL_MEMSET(main_handle_g.cfg.net.ntrip_ip,0x0,sizeof(main_handle_g.cfg.net.ntrip_ip));
-			GLOBAL_MEMCPY(main_handle_g.cfg.net.ntrip_ip,ip_buf,sizeof(main_handle_g.cfg.net.ntrip_ip));
-			sys_para_save();
-			GLOBAL_PRINT(("RTK_ntrip IP set up and save\r\n"));
+			if(DNS_buff.dns_flag)
+			{
+				netIP_aton((const char*)DNS_buff.dns_ip, NET_ADDR_IP4, ip_buf);
+				if(net_ip_is_legal(ip_buf))
+				{
+					GLOBAL_MEMSET(main_handle_g.cfg.net.ntrip_ip,0x0,sizeof(main_handle_g.cfg.net.ntrip_ip));
+					GLOBAL_MEMCPY(main_handle_g.cfg.net.ntrip_ip,ip_buf,sizeof(main_handle_g.cfg.net.ntrip_ip));
+					sys_para_save();
+					GLOBAL_PRINT(("RTK_ntrip IP set up and save\r\n"));
+					GLOBAL_PRINT(("RTK_ntrip now Reconnecting!!\r\n"));
+					Ntrip_State = NTRIP_INIT;
+				}
+			}
+			delay_ms(100);
+			if(timeout<=1)
+			{
+				ERR_PRINT(("RTK IP set Time out!!\r\n"));
+			}
 		}
 		ret = TRUE;
 	}
@@ -745,12 +900,16 @@ static BOOL _sshell_excute_show_cmd(U8* ptr)
 		//GLOBAL_PRINT((" MAC ADDR:\t%s\r\n", mac_ntoa(eth0_mac_addr)));
 		ret = TRUE;
 	}
-	else if(!GLOBAL_STRCASECMP(ptr, "position"))
+	else if(!GLOBAL_STRCASECMP(ptr, "post_para"))
 	{
 		show_position_para();
 		ret = TRUE;
 	}
-
+	else if(!GLOBAL_STRCASECMP(ptr, "anchor_state"))
+	{
+		show_anchor_state();
+		ret = TRUE;
+	}	
 	return ret;
 }
 
@@ -778,17 +937,33 @@ static BOOL _sshell_excute_debug_cmd(U8* ptr)
 	if(!GLOBAL_STRNCASECMP(ptr, "on ", 3))
 	{
 		ret = TRUE;
-		if(!GLOBAL_STRCASECMP(ptr+3, "position"))
+		if(!GLOBAL_STRCASECMP(ptr+3, "efs_post"))
 		{
-			sys_debug_set_type(SYS_DEBUG_POST);
+			sys_debug_set_type(SYS_DEBUG_EFS_POST);
 		}
-		else if(!GLOBAL_STRCASECMP(ptr+3, "position_warn"))
+		else if(!GLOBAL_STRCASECMP(ptr+3, "efs_gen"))
 		{
-			sys_debug_set_type(SYS_DEBUG_POST_WARNING);
-		}			
+			sys_debug_set_type(SYS_DEBUG_EFS_GENERAL);
+		}	
+		else if(!GLOBAL_STRCASECMP(ptr+3, "efs_err"))
+		{
+			sys_debug_set_type(SYS_DEBUG_EFS_ERR);
+		}		
+		else if(!GLOBAL_STRCASECMP(ptr+3, "efs_post_note"))
+		{
+			sys_debug_set_type(SYS_DEBUG_EFS_POST_NOTE);
+		}		
+		else if(!GLOBAL_STRCASECMP(ptr+3, "efs_rssi"))
+		{
+			sys_debug_set_type(SYS_DEBUG_EFS_RSSI);
+		}		
+		else if(!GLOBAL_STRCASECMP(ptr+3, "efs_rg"))
+		{
+			sys_debug_set_type(SYS_DEBUG_EFS_RANGING);
+		}		
 	    else if(!GLOBAL_STRCASECMP(ptr+3, "server"))
 	    {
-	        sys_debug_set_type(SYS_DEBUG_SERVER);
+	      sys_debug_set_type(SYS_DEBUG_SERVER);
 	    }
 		else if(!GLOBAL_STRCASECMP(ptr+3, "mqtt"))
 	    {
@@ -818,9 +993,17 @@ static BOOL _sshell_excute_debug_cmd(U8* ptr)
 	    {
 	        sys_debug_set_type(SYS_DEBUG_ENHANCE);
 	    }
+		else if(!GLOBAL_STRCASECMP(ptr+3, "IMU"))
+	    {
+	        sys_debug_set_type(SYS_DEBUG_IMU);
+	    }
+	    else if(!GLOBAL_STRCASECMP(ptr+3, "IMURAW"))
+	    {
+	        sys_debug_set_type(SYS_DEBUG_IMU_RAW);
+	    }
 		else if(!GLOBAL_STRCASECMP(ptr+3, "all"))
 		{
-			sys_debug_set_type(SYS_DEBUG_SERVER);
+			sys_debug_set_type(SYS_DEBUG_ENHANCE);
 			sys_debug_set_type(SYS_DEBUG_GGA);
 			sys_debug_set_type(SYS_DEBUG_RMC);
 			sys_debug_set_type(SYS_DEBUG_RTK);
@@ -833,13 +1016,29 @@ static BOOL _sshell_excute_debug_cmd(U8* ptr)
 	else if(!GLOBAL_STRNCASECMP(ptr, "off ", 4))
 	{
 		ret = TRUE;
-		if(!GLOBAL_STRCASECMP(ptr+4, "position"))
+		if(!GLOBAL_STRCASECMP(ptr+4, "efs_post"))
 		{
-			sys_debug_clear_type(SYS_DEBUG_POST);
+			sys_debug_clear_type(SYS_DEBUG_EFS_POST);
 		}
-		else if(!GLOBAL_STRCASECMP(ptr+4, "position_warn"))
+		else if(!GLOBAL_STRCASECMP(ptr+4, "efs_gen"))
 		{
-			sys_debug_clear_type(SYS_DEBUG_POST_WARNING);
+			sys_debug_clear_type(SYS_DEBUG_EFS_GENERAL);
+		}	
+		else if(!GLOBAL_STRCASECMP(ptr+4, "efs_err"))
+		{
+			sys_debug_clear_type(SYS_DEBUG_EFS_ERR);
+		}		
+		else if(!GLOBAL_STRCASECMP(ptr+4, "efs_post_note"))
+		{
+			sys_debug_clear_type(SYS_DEBUG_EFS_POST_NOTE);
+		}		
+		else if(!GLOBAL_STRCASECMP(ptr+4, "efs_rssi"))
+		{
+			sys_debug_clear_type(SYS_DEBUG_EFS_RSSI);
+		}		
+		else if(!GLOBAL_STRCASECMP(ptr+4, "efs_rg"))
+		{
+			sys_debug_clear_type(SYS_DEBUG_EFS_RANGING);
 		}		
     	else if(!GLOBAL_STRCASECMP(ptr+4, "server"))
 		{
@@ -873,6 +1072,14 @@ static BOOL _sshell_excute_debug_cmd(U8* ptr)
 	    {
 	        sys_debug_clear_type(SYS_DEBUG_NTRIP);
 	    }
+		else if(!GLOBAL_STRCASECMP(ptr+4, "IMU"))
+	    {
+	        sys_debug_clear_type(SYS_DEBUG_IMU);
+	    }
+		else if(!GLOBAL_STRCASECMP(ptr+4, "IMURAW"))
+	    {
+	        sys_debug_clear_type(SYS_DEBUG_IMU_RAW);
+	    }
 		else if(!GLOBAL_STRCASECMP(ptr+4, "all"))
 		{
 			sys_debug_clear_all();
@@ -883,229 +1090,8 @@ static BOOL _sshell_excute_debug_cmd(U8* ptr)
 		}
 	}
 	
-#if 0
-	if(!GLOBAL_STRNCASECMP(ptr, "on ", 3))
-	{
-		ret = TRUE;
-		if(!GLOBAL_STRCASECMP(ptr+3, "test"))
-		{
-			sys_debug_set_type(SYS_DEBUG_TEST);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+3, "warn"))
-		{
-			sys_debug_set_type(SYS_DEBUG_WARN);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+3, "error"))
-		{
-			sys_debug_set_type(SYS_DEBUG_ERROR);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+3, "note"))
-		{
-			sys_debug_set_type(SYS_DEBUG_NOTE);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+3, "ctrl"))
-		{
-			sys_debug_set_type(SYS_DEBUG_CTRL);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+3, "gnss"))
-		{
-			sys_debug_set_type(SYS_DEBUG_GNSS);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+3, "ocxo"))
-		{
-			sys_debug_set_type(SYS_DEBUG_OCXO);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+3, "tdc"))
-		{
-			sys_debug_set_type(SYS_DEBUG_TDC);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+3, "socket"))
-		{
-			sys_debug_set_type(SYS_DEBUG_SOCKET);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+3, "pl"))
-		{
-			sys_debug_set_type(SYS_DEBUG_PL);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+3, "ant"))
-		{
-			sys_debug_set_type(SYS_DEBUG_ANT);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+3, "nav"))
-		{
-			sys_debug_set_type(SYS_DEBUG_NAV);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+3, "fpga"))
-		{
-			sys_debug_set_type(SYS_DEBUG_FPGA);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+3, "heart"))
-		{
-			//gxw_protocol_send_heart_msg();
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+3, "hand"))
-		{
-			//gxw_protocol_send_handshake_msg();
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+3, "eph gps"))
-		{
-			sys_debug_set_type(SYS_DEBUG_EPH_GPS);
-		}
-        else if(!GLOBAL_STRCASECMP(ptr+3, "eph bds"))
-		{
-			sys_debug_set_type(SYS_DEBUG_EPH_BDS);
-		}
-        else if(!GLOBAL_STRCASECMP(ptr+3, "eph glo"))
-		{
-			sys_debug_set_type(SYS_DEBUG_EPH_GLO);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+3, "ad936x"))
-		{
-			sys_debug_set_type(SYS_DEBUG_AD936X);
-		}
-        else if(!GLOBAL_STRCASECMP(ptr+3, "ubx"))
-        {
-            sys_debug_set_type(SYS_DEBUG_UBX);
-        }
-		else if(!GLOBAL_STRCASECMP(ptr+3, "ubx sat"))
-		{
-			sys_debug_set_type(SYS_DEBUG_UBX_SAT);
-		}
-        else if(!GLOBAL_STRCASECMP(ptr+3, "temp"))
-		{
-			sys_debug_set_type(SYS_DEBUG_TEMP);
-		}
-        else if(!GLOBAL_STRCASECMP(ptr+3, "bcode"))
-		{
-			sys_debug_set_type(SYS_DEBUG_BCODE);
-		}
-        else if(!GLOBAL_STRCASECMP(ptr+3, "json"))
-		{
-			sys_debug_set_type(SYS_DEBUG_JSON);
-		}
-        else if(!GLOBAL_STRCASECMP(ptr+3, "usartctrl"))
-		{
-			sys_debug_set_type(SYS_DEBUG_USARTCTRL);
-		}
-        else if(!GLOBAL_STRCASECMP(ptr+3, "sat"))
-        {
-            sys_debug_set_type(SYS_DEBUG_SAT);
-        }
-		else
-		{
-			ret = FALSE;
-		}
-	}
-	else if(!GLOBAL_STRNCASECMP(ptr, "off ", 4))
-	{
-		ret = TRUE;
-		if(!GLOBAL_STRCASECMP(ptr+4, "test"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_TEST);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+4, "warn"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_WARN);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+4, "error"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_ERROR);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+4, "note"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_NOTE);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+4, "ctrl"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_CTRL);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+4, "gnss"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_GNSS);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+4, "ocxo"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_OCXO);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+4, "socket"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_SOCKET);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+4, "tdc"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_TDC);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+4, "nav"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_NAV);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+4, "pl"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_PL);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+4, "ant"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_ANT);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+4, "fpga"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_FPGA);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+4, "eph gps"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_EPH_GPS);
-		}
-        else if(!GLOBAL_STRCASECMP(ptr+4, "eph bds"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_EPH_BDS);
-		}
-        else if(!GLOBAL_STRCASECMP(ptr+4, "eph glo"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_EPH_GLO);
-		}
-		else if(!GLOBAL_STRCASECMP(ptr+4, "ad936x"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_AD936X);
-		}
-        else if(!GLOBAL_STRCASECMP(ptr+4, "ubx"))
-        {
-            sys_debug_clear_type(SYS_DEBUG_UBX);
-        }
-		else if(!GLOBAL_STRCASECMP(ptr+4, "ubx sat"))
-        {
-            sys_debug_clear_type(SYS_DEBUG_UBX_SAT);
-        }
-        else if(!GLOBAL_STRCASECMP(ptr+4, "temp"))
-        {
-            sys_debug_clear_type(SYS_DEBUG_TEMP);
-        }
-        else if(!GLOBAL_STRCASECMP(ptr+4, "bcode"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_BCODE);
-		}
-        else if(!GLOBAL_STRCASECMP(ptr+4, "json"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_JSON);
-		}
-        else if(!GLOBAL_STRCASECMP(ptr+4, "usartctrl"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_USARTCTRL);
-		}
-        else if(!GLOBAL_STRCASECMP(ptr+4, "sat"))
-		{
-			sys_debug_clear_type(SYS_DEBUG_SAT);
-		}        
-		else
-		{
-			ret = FALSE;
-		}
-	}
-
-#endif
 	return ret;
 }
-
-
 
 /*****************************************************************************
  函 数 名  : _sshell_excute_cmd
@@ -1155,8 +1141,9 @@ static BOOL _sshell_excute_debug_cmd(U8* ptr)
 	{
 		sys_para_reset();
 		reset_position_default_para();
-    	sys_para_save();     //added by sunj 2019-10-18 14:31
-   		GLOBAL_PRINT(("all parameters have been reset and saved\r\n"));
+    sys_para_save();     //added by sunj 2019-10-18 14:31
+    save_device_para();
+    GLOBAL_PRINT(("all parameters have been reset and saved\r\n"));
 		return TRUE;
 	}
 	else if(GLOBAL_STRCASECMP(ptr, "reboot") == 0)
@@ -1197,14 +1184,14 @@ static BOOL _sshell_excute_debug_cmd(U8* ptr)
 			
 		return TRUE;
 	}	
-	else if(!GLOBAL_STRNCASECMP(ptr, "open ranging", 12))
+	else if(!GLOBAL_STRNCASECMP(ptr, "open rg", 7))
 	{	
 		g_ranging_flag = 1;
 		osEventFlagsSet(evt_id, DM1000_TXRX_FLAG);
 			
 		return TRUE;
 	}	
-	else if(!GLOBAL_STRNCASECMP(ptr, "close ranging", 13))
+	else if(!GLOBAL_STRNCASECMP(ptr, "close rg", 8))
 	{		
 		g_ranging_flag = 0;	
 		osEventFlagsSet(evt_id, DM1000_TXRX_FLAG);
@@ -1238,13 +1225,13 @@ static BOOL _sshell_excute_debug_cmd(U8* ptr)
 		osEventFlagsSet(evt_id, DM1000_TXRX_FLAG);
 			
 		return TRUE;
-	}
-	else if(!GLOBAL_STRNCASECMP(ptr, "start tx_power", 14))
+	}	
+	else if(!GLOBAL_STRNCASECMP(ptr, "open tx_power", 13))
 	{	
 		char *p_end;
 		
 		g_dwt_auto_tx_power_config.auto_choose_tx_power = 1;
-		g_dwt_auto_tx_power_config.main_device_rssi_threshold = GLOBAL_STRTOD(ptr+14, &p_end);
+		g_dwt_auto_tx_power_config.main_device_rssi_threshold = GLOBAL_STRTOD(ptr+13, &p_end);
 		g_dwt_auto_tx_power_config.sub_device_rssi_threshold = GLOBAL_STRTOD(p_end, &p_end);
 		g_dwt_auto_tx_power_config.main_device_rssi_rang = GLOBAL_STRTOD(p_end, &p_end);
 		g_dwt_auto_tx_power_config.sub_device_rssi_rang = GLOBAL_STRTOD(p_end, &p_end);
@@ -1253,41 +1240,54 @@ static BOOL _sshell_excute_debug_cmd(U8* ptr)
 			
 		return TRUE;
 	}	
-	else if(!GLOBAL_STRNCASECMP(ptr, "stop tx_power", 13))
+	else if(!GLOBAL_STRNCASECMP(ptr, "close tx_power", 14))
 	{		
 		g_dwt_auto_tx_power_config.auto_choose_tx_power = 0;
 		osEventFlagsSet(evt_id, DM1000_TXRX_FLAG);
 				
 		return TRUE;
 	}		
-	else if(!GLOBAL_STRNCASECMP(ptr, "stop uwb", 8))
+	else if(!GLOBAL_STRNCASECMP(ptr, "open efs", 8))
 	{ 	
-		osStatus_t status = osThreadSuspend(thread_UWB_id);
-		if(status == osOK)
-		{
-			GLOBAL_PRINT(("stop uwb is suc\r\n"));
-			return TRUE;
-		}
-		else
-		{
-			GLOBAL_PRINT(("stop uwb is fail,osThreadSuspend return %d\r\n", status));
-		}	
-	} 
-	else if(!GLOBAL_STRNCASECMP(ptr, "start uwb", 9))
-	{
 		osStatus_t status = osThreadResume(thread_UWB_id);
 		if(status == osOK)
 		{
-			GLOBAL_PRINT(("start uwb is suc\r\n"));
+			GLOBAL_PRINT(("open efs is suc\r\n"));
 			return TRUE;
 		}
 		else
 		{
-			GLOBAL_PRINT(("start uwb is fail,osThreadResume return %d\r\n", status));
+			GLOBAL_PRINT(("open efs is fail,osThreadResume return %d\r\n", status));
+		}				
+	} 
+	else if(!GLOBAL_STRNCASECMP(ptr, "close efs", 9))
+	{
+		osStatus_t status = osThreadSuspend(thread_UWB_id);
+		if(status == osOK)
+		{
+			GLOBAL_PRINT(("close efs is suc\r\n"));
+			return TRUE;
 		}
-	
-		
+		else
+		{
+			GLOBAL_PRINT(("close efs is fail,osThreadSuspend return %d\r\n", status));
+		}		
 	}
+	else if(!GLOBAL_STRNCASECMP(ptr, "open ant_cal", 12))
+	{ 
+		char *p_end;
+		g_dwt_auto_ant_cal.salve_ant_cal_en = GLOBAL_STRTOUL(ptr+12, &p_end, 10);
+		g_dwt_auto_ant_cal.actual_dist_cm = GLOBAL_STRTOUL(p_end, &p_end, 10);
+		g_dwt_auto_ant_cal.auto_ant_cal_open = 1;	
+		osEventFlagsSet(evt_id, DM1000_TXRX_FLAG);
+		return TRUE;
+	} 
+	else if(!GLOBAL_STRNCASECMP(ptr, "close ant_cal", 13))
+	{		
+		g_dwt_auto_ant_cal.auto_ant_cal_open = 0;
+		osEventFlagsSet(evt_id, DM1000_TXRX_FLAG);
+		return TRUE;
+	}	
 	else if(!GLOBAL_STRNCASECMP(ptr, "show ", 5))
 	{
 		if(_sshell_excute_show_cmd(ptr+5) == TRUE)
@@ -1530,8 +1530,6 @@ static void _sshell_proc_rcv_data(U8 data)
 *****************************************************************************/
 void _sshell_thread(void* arg)
 {
-	static U32 count = 0;
-
 	while(1)
 	{
 		CHAR_T* pData = NULL;
@@ -1545,8 +1543,7 @@ void _sshell_thread(void* arg)
 		{
 			delay_ms(5);
 		}
-
-		count++;
+		//osThreadYield();
 	}
 }
 

@@ -231,6 +231,7 @@ static void _print_thread(void *arg)
 		{
 			delay_ms(2);
 		}
+		//osThreadYield();
 	}
 }
 

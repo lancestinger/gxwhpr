@@ -29,7 +29,7 @@
 ******************************************************************************/
 
 
-
+#include "fml/gnss/nmea.h"
 #include "data_rcv.h"
 
 /*****************************************************************************
@@ -92,6 +92,7 @@ BOOL UTL_DATA_RCV_Data_For_1Head2Tail(IN UTL_DATA_RCV_T *rcv, IN U8 data)
 			else
 			{
 				/* Header 1 OK */
+				UBX_1PPS_time = osKernelGetTickCount();//暂时用于惯导1PPS时间戳获取
 				rcv->rcv_status = DATA_RCV_HEADER_1_OK;
 			}
 		break;

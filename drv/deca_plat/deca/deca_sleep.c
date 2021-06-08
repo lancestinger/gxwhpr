@@ -12,7 +12,7 @@
  */
 
 #include "deca_sleep.h"
-#include "platform/port/port.h"
+#include "deca_plat/port/port.h"
 
 void deca_sleep(unsigned int time_ms)
 {

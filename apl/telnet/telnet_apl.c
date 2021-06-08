@@ -171,15 +171,6 @@ uint32_t netTELNETs_ProcessCommand (const char *cmd, char *buf, uint32_t buf_len
 
         case 3:
             telnet_server_set_delay (2);
-#if 0
-            len = 0;
-            buf[0] = 0x0;
-            if(!rng_is_empty(print_rngbuf))
-            {
-                len = rng_get_buf(print_rngbuf,buf,1024);
-            }
-            buf[len++] = 0x0;
-#endif
 
             if(uart_get_dbg_outmode() == DBG_OUT_TELNET)
             {
@@ -190,7 +181,6 @@ uint32_t netTELNETs_ProcessCommand (const char *cmd, char *buf, uint32_t buf_len
 									len = rng_get_buf(print_rngbuf,buf,1024);
 							}
 							buf[len++] = 0x0;
-
               len = (len | (1u << 31));
             }
 						else
@@ -201,16 +191,6 @@ uint32_t netTELNETs_ProcessCommand (const char *cmd, char *buf, uint32_t buf_len
 
 						return len;
 						
-						#if 0
-            if(uart_get_dbg_outmode() == DBG_OUT_USART)
-            {
-                return (len);
-            }
-            else
-            {
-                return (len | (1u << 31));
-            }
-						#endif
     }
 
     // Simple command line parser

@@ -3,7 +3,7 @@
 #include "decadriver/deca_device_api.h"
 #include "decadriver/deca_regs.h"
 //#include "deca_sleep.h"
-#include "platform/port/port.h"
+#include "deca_plat/port/port.h"
 #include <cmsis_os2.h>
 #include "pubDef.h"
 
@@ -29,6 +29,14 @@ typedef enum
 		UNKNOWN_ARNCHOR
 } anchor_t;
 
+typedef enum 
+{
+		HEAD_ANCHOR, 		//首基站
+		MID_ARNCHOR,		//中间基站		
+		TAIL_ANCHOR		  //尾基站
+} anchor_post_type_t;
+
+
 
 
 typedef enum 
@@ -42,8 +50,13 @@ typedef enum
 		POLL,													//测距POLL帧
 		RESP,													//测距RESP帧
 		FINAL,												//测距FINAL帧
-		ACK,														//测距ACK帧
+		ACK,													//测距ACK帧
 		AUTO_CHOOSE_TX_POWER,					//自动选择tx power
+		AUTO_CAL_ANT,									//自动校准天线延迟
+		AUTO_CAL_ANT_ACK,							//自动校准天线延迟确认
+		AUTO_CAL_ANT_INFO,						//自动校准天线延迟信息
+		AUTO_CAL_ANT_INFO_ACK,				//自动校准天线延迟信息确认
+		STOP_AUTO_CAL_ANT,						//停止自动校准天线
 		INTERFERENCE_SIGNAL						//干扰信号
 } dm_comm_t;
 
@@ -85,9 +98,12 @@ typedef enum
 {
 		RET_SUCCESS, 											//成功
 		RET_FAILED, 											//失败
+		RET_OTHER_FAILED,									//其它接受错误
 		RECV_TIME_OUT, 										//接受超时
-		RECV_HIT, 												//接受碰撞
+		RECV_NO_IRQ, 											//无接受中断
+		RECV_DATA_ERR, 										//接受数据错误
 		TIME_OUT,													//超时
+		NO_SIGNAL,
 		NETWORK_TIME_OUT, 								//定位网络超时
 } ret_t;
 
@@ -109,8 +125,8 @@ typedef enum
 typedef enum 
 {
 		POS_INVALID=0,				//定位无效
-		POS_VALID,					//定位有效
-		POS_VALUE_INVALID,	        //定位值无效
+		POS_VALID,						//定位有效
+		POS_VALUE_INVALID,	  //定位值无效
 		POS_VALUE_VALID,
 } tag_pos_state_t;
 
@@ -149,26 +165,27 @@ typedef struct
 #pragma pack(4)
 typedef struct 
 {
+		u32 tx_power;												//发射功率增益
 		u16 device_type; 										//设备类型：1.基站、 2.标签
-		u16 ant_tx_delay;										//天线发送延迟时间
-		u16 ant_rx_delay;										//天线接受延迟时间		
+		u16 ant_delay;										  //天线延迟时间		
 		u16 tag_id; 												//标签id （0-0xffff）
 		u16 anchor_id; 											//基站id （0-0xffff）
+		u16 max_allow_tag_num;						  //最大允许标签个数
 		u16	dyn_slot_long;									//动态时隙时长
 		u16	ranging_slot_long;							//测距时隙时长						
 		u16 kalman_q;												//卡尔曼滤波-Q
-		u16 kalman_r;												//卡尔曼滤波-R	
-		u8 on_left;											//基站在马路的左侧,1：在左，否则在右
-		u8 anchor_idle_num;							//空闲基站持续次数
-		u8 chan;												//dw1000通道
-		u32 tx_power;												//发射功率增益
+		u16 kalman_r;												//卡尔曼滤波-R		
+		u8 on_left;													//基站在马路的左侧,1：在左，否则在右
+		u8 anchor_idle_num;									//空闲基站持续次数
+		u8 chan;														//dw1000通道
+		u8 t2wall_fl_num;										//接受机到隧道墙壁的距离滤波平均个数
 		double position[3]; 								//基站坐标x,y,z
 		double ref_position[3]; 						//参考点坐标x,y,z
-		double t2wall_actual_dist;					//接受机到隧道墙壁的实际距离
-		double t2wall_threshold;						//接受机到隧道墙壁的阈值距离
+		float t2wall_actual_dist;					//接受机到隧道墙壁的实际距离，单位米
+		float t2wall_threshold;						//接受机到隧道墙壁的阈值距离，单位米
 		float tag_h; 											//标签相对地面的垂直高度
-		float anchor_h; 											//基站相对地面的垂直高度
-
+		float anchor_h; 									//基站相对地面的垂直高度
+		float	sig_qa_thr;									//信号质量阈值
 } device_config_t; 
 #pragma pack()
 
@@ -181,16 +198,18 @@ typedef struct
 		u8 	anchor_sub_state; 							//基站子状态信息。主基站：0.激活状态、1.等待标签注册状态、2.时隙分配状态、3.测距状态、4.空闲状态；		
 		u8 	tag_state; 											//0.等待被激活状态、1.注册状态、2.接受时隙分配状态、3.测距状态、4.空闲状态	
 		tag_pos_state_t 	tag_position_valid_flag; //定位有效状态
-		double tag_position[3]; 								//标签坐标x,y,z
-		double t2ref_dist;									//接受机到参考点距离
-		double t2wall_dist;									//接受机到隧道墙壁的距离
-		double t2main_dist;									//接受机到主基站的距离
-		double rssi;												//接受信号强度
-		double D0;                                          //测距信息d0
-		double D1;                                          //测距信息d1
+		double tag_position[3]; 						//标签坐标x,y,z
+		float t2ref_dist;									  //接受机到参考点距离
+		float t2wall_dist;									//接受机到隧道墙壁的距离
+		float t2main_dist;									//接受机到主基站的距离
+		float main_rssi;												  //接受信号强度
+		float sub_rssi;
+		float D0;                           //测距信息d0
+		float D1;                           //测距信息d1
 		u16 main_anchor_id; 								//主基站id （0-0xffff）		
 		u16 sub_anchor_id; 								  //从基站id （0-0xffff）
 		u32 position_interval;							//定位间隔
+		u32 pos_Time;
 } pos_info_t;
 
 
@@ -205,6 +224,10 @@ typedef struct
 		u8 on_left;
 		float main_anchor_h;
 		float sub_anchor_h;
+		u16 max_allow_tag_num;							//最大允许标签个数
+		u16 dyn_slot_long;									//动态时隙时长
+		u16 ranging_slot_long;							//测距时隙时长
+		u32 register_timeout_us;						//注册超时时间		
 } locate_net_info_t; 
 
 
@@ -217,6 +240,26 @@ typedef struct
 		float main_device_rssi_rang;				//主设备信号强度可超过最低信号强度阈值的范围
 		float sub_device_rssi_rang; 				//从设备信号强度可超过最低信号强度阈值的范围
 } dwt_auto_tx_power_config_t; 
+
+/*自动校准天线收发延迟*/
+typedef struct 
+{
+		u8 auto_ant_cal_open; 							//1:打开天线自动校准，0：关闭天线自动校准
+		u8 salve_ant_cal_en;								//1:使能校准从设备天线，0：禁止校准从设备天线	
+		s32 actual_dist_cm;									//实际距离
+} dwt_auto_ant_cal_t; 
+
+
+
+typedef struct 
+{
+	float rx_power;
+	u16 std_noise;
+	s16 rx_fp_power_diff;
+	s16 f1_noise_amp_diff;
+	
+}rcv_signal_quality_t;
+
 
 
 /*键值对*/
@@ -234,7 +277,12 @@ extern u8 g_ranging_flag;
 extern u8 g_detection_signal_flag;
 extern u8 g_interference_signal_flag;
 extern u8 g_open_filter_flag;
+extern u8 g_reset_filter;
 extern dwt_auto_tx_power_config_t g_dwt_auto_tx_power_config;
+extern dwt_auto_ant_cal_t g_dwt_auto_ant_cal;
+extern anchor_post_type_t	g_anchor_post_type;
+
+
 extern key_vaule_t g_key_vaule;
 
 
@@ -283,8 +331,9 @@ static dwt_config_t config = {
 
 
 
-#define TX_ANT_DLY 16540//16474//16583
-#define RX_ANT_DLY 16540//16474//16583
+//#define TX_ANT_DLY 16540//16474//16583
+//#define RX_ANT_DLY 16540//16474//16583
+#define ANT_DLY 16540
 #define FINAL_MSG_TS_LEN 4  //时间数据长度
 
 	
@@ -292,6 +341,14 @@ static dwt_config_t config = {
 extern u16 ERROR_FLAG;  //测距错误计算次数标志位，达到一定次数跳出
 extern  u16   Flash_Device_ID;         //高8位为次基站ID，范围0~6  低8位为标签ID 0~99    （程序内部 标签ID为0~247  次基站ID为248~245  主基站ID为255）
 extern  float Triangle_scale;    //基站筛选过程使用的比例参数
+extern  float g_uwb_rg_ssi;
+extern u8 g_detection_signal_flag;
+extern anchor_post_type_t  g_anchor_post_type;
+
+
+
+
+
 
  void GPIO_Toggle(GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin);
  unsigned short get(short);
@@ -305,10 +362,11 @@ extern  void reset_position_default_para(void);
 extern  void save_device_para(void);
 extern  void get_device_para(void);
 extern  void show_position_para(void);
-u32 calc_tx_power_config_value(u8* ptr);
-float calc_tx_power_config_value_to_db(u32 value);
-
-
+extern  void show_anchor_state(void);
+extern u32 calc_tx_power_config_value(u8* ptr);
+extern float calc_tx_power_config_value_to_db(u32 value);
+extern u16 antDelay2antDist(u16 ant_delay);
+extern u16 antDist2antDelay(u16 ant_delay_dist);
 
 
  

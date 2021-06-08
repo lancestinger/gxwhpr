@@ -27,9 +27,6 @@
 #define MSG_BUFLEN      15
 
 extern U8 GGA_OLD_FLAG;
-extern U8 GGA_DATA_READY;
-extern U8 RMC_DATA_READY;
-
 
 typedef struct
 {
@@ -44,6 +41,10 @@ typedef struct
 	U8 GGA_slevel;     //GGA大地椭球面距海平面距离
 	char *GGA_unit;     //GGA单位
 	char *RMC_VA;       //RMC有效标志
+	U8 GGA_DATA_READY;  //GGA数据采集完毕标志
+	U8 RMC_DATA_READY;  //RMC数据采集完毕标志
+	U8 GGA_DATA_READY_IMU; //GGA数据采集完毕标志,用于IMU
+	U8 RMC_DATA_READY_IMU; //RMC数据采集完毕标志,用于IMU
 	
 }Parse_data;
 

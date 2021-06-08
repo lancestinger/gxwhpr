@@ -5,18 +5,22 @@
 #include "ins_kalman.h"
 #include "comm/project_def.h"
 
-
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
 
 
 //static int m_InsInited;
+static int m_Epoch_Atti;
+static int m_Epoch_InputPosVel;
+static int m_Epoch_InputHeading;
 static int m_PosVelInited;
 static int8 m_LastNaviTime;
 static ins_geopos_t m_Position;
 static ins_vel_t    m_Velocity;
 static ins_atti_t   m_Attitude;
+
+static ins_atti_t   m_AttitudeOfMag;
 
 static void ResampleImuData(imu_rawdata_t* pImuRawData, int cnt, int8 locTime, imu_data_t veImuData[]);
 static void GetMN(double latitude, double* M, double* N);
@@ -31,6 +35,10 @@ void ins_reset()
 	//m_PosInited = false;
 	//m_VelInited = false;
 	//m_InsInited = false;
+	m_Epoch_Atti = 0;
+	m_Epoch_InputPosVel = 0;
+	m_Epoch_InputHeading = 0;
+
 	m_PosVelInited = false;
 
 	m_LastNaviTime = 0;
@@ -50,11 +58,16 @@ void ins_set_ag_bias(float acceBias[], float gyroBias[])
 
 void ins_getFusionRslt(ins_geopos_t* pPos, ins_vel_t* pVel, ins_atti_t* pAtti)
 {
-	GLOBAL_MEMCPY(pPos, &m_Position, sizeof(ins_geopos_t));
-	GLOBAL_MEMCPY(pVel, &m_Velocity, sizeof(ins_vel_t));
+	memcpy(pPos, &m_Position, sizeof(ins_geopos_t));
+	memcpy(pVel, &m_Velocity, sizeof(ins_vel_t));
 
 	ins_GetAttitude(pAtti);
 
+}
+
+void ins_getMagAttitude(ins_atti_t* pAtti)
+{
+	memcpy(pAtti, &m_AttitudeOfMag, sizeof(ins_atti_t));
 }
 
 
@@ -101,18 +114,18 @@ void insNaviUpdate(int8 locTime, imu_rawdata_t acce[], int n1, imu_rawdata_t mag
 
 	double matI[] = {1,0,0, 0,1,0, 0,0,1};
 
-	ins_atti_t atti1, atti2, atti3;
+	memset(&acceDatas,0x0,sizeof(imu_data_t)*SENSOR_SAMPLE_RATE);
+	memset(&magDatas,0x0,sizeof(imu_data_t)*SENSOR_SAMPLE_RATE);
+	memset(&gyroDatas,0x0,sizeof(imu_data_t)*SENSOR_SAMPLE_RATE);
 
-	GLOBAL_MEMSET(acceDatas,0x0,sizeof(imu_data_t)*SENSOR_SAMPLE_RATE);
-	GLOBAL_MEMSET(magDatas,0x0,sizeof(imu_data_t)*SENSOR_SAMPLE_RATE);
-	GLOBAL_MEMSET(gyroDatas,0x0,sizeof(imu_data_t)*SENSOR_SAMPLE_RATE);
+	//ins_atti_t atti1, atti2, atti3;
 
 	if (0 == locTime)
 	{
 		return;
 	}
 
-	if ((!attiInited()) && (n1<SENSOR_SAMPLE_RATE || n2<SENSOR_SAMPLE_RATE || n3<SENSOR_SAMPLE_RATE) )
+	if ((!attiInited()) && (n1<SENSOR_SAMPLE_RATE*4/5 || n2<SENSOR_SAMPLE_RATE*4/5 || n3<SENSOR_SAMPLE_RATE*4/5) )
 	{
 		return;
 	}
@@ -133,6 +146,8 @@ void insNaviUpdate(int8 locTime, imu_rawdata_t acce[], int n1, imu_rawdata_t mag
 	}
 	else
 	{
+		m_Epoch_Atti += 1;
+
 		/*
 		* 姿态已经初始化，看位置速度是否已经初始化
 		*/
@@ -143,7 +158,7 @@ void insNaviUpdate(int8 locTime, imu_rawdata_t acce[], int n1, imu_rawdata_t mag
 			*/
 			ins_AttiUpdateSec(gyroDatas);
 
-			ins_AttiClibBySnsr(acceDatas, magDatas);
+			ins_AttiClibBySnsr(m_Epoch_Atti, acceDatas, magDatas);
 
 		}
 		else
@@ -222,12 +237,14 @@ void insNaviUpdate(int8 locTime, imu_rawdata_t acce[], int n1, imu_rawdata_t mag
 
 			}
 
-			ins_AttiClibBySnsr(acceDatas, magDatas);
+			ins_AttiClibBySnsr(m_Epoch_Atti, acceDatas, magDatas);
 
+			GetAttitude_From_AcceMag(acceDatas, magDatas, &m_AttitudeOfMag);
 		}
 
 	}
 
+	CalibVelDir();
 
 	//m_pAttitudeMng.AttitudeClibrateBySensor(acceDatas, magDatas);
 
@@ -247,7 +264,7 @@ void insNaviFusion(int8 locTime, const ins_geopos_t* pPos, const ins_vel_t* pVel
 {
 	double dt;
 
-	ins_atti_t atti3;
+	//ins_atti_t atti3;
 
 	if (0 == locTime)
 	{
@@ -262,8 +279,8 @@ void insNaviFusion(int8 locTime, const ins_geopos_t* pPos, const ins_vel_t* pVel
 		}
 		else
 		{
-			GLOBAL_MEMCPY(&m_Position, pPos, sizeof(ins_geopos_t));
-			GLOBAL_MEMCPY(&m_Velocity, pVel, sizeof(ins_vel_t));
+			memcpy(&m_Position, pPos, sizeof(ins_geopos_t));
+			memcpy(&m_Velocity, pVel, sizeof(ins_vel_t));
 
 			ins_kalman_init();
 
@@ -306,9 +323,77 @@ void insNaviFusion(int8 locTime, const ins_geopos_t* pPos, const ins_vel_t* pVel
 	{
 		if (NULL != pHeading)
 		{
-			ins_HeadingCalibOuter(*pHeading);
+			m_Epoch_InputHeading += 1;
+			ins_HeadingCalibOuter(m_Epoch_InputHeading, *pHeading);
 		}
 	}
+
+}
+
+void CalibVelDir()
+{
+	ins_atti_t atti;
+	double ve, vn;
+	double v_norm;
+	double heading;
+	double vel_dir, vel_dir_clib;
+	double dir_err;
+	double fabs_dir_err;
+
+	double ratio_dir = 0.05;
+	double min_dir_diff = 0.15 * DEG2RAD;
+	double max_dir_diff = 1.5 * DEG2RAD;
+
+	if (!m_PosVelInited || !attiInited())
+	{
+		return;
+	}
+
+	ins_GetAttitude(&atti);
+	heading = -atti.y;
+
+	ve = m_Velocity.ve;
+	vn = m_Velocity.vn;
+	v_norm = sqrt(ve*ve + vn*vn);
+
+	if (v_norm < 2.0)
+	{
+		return;
+	}
+
+	vel_dir = atan2(ve, vn);
+
+	dir_err = heading - vel_dir;
+
+	while (dir_err > PI) 
+	{
+		dir_err -= 2*PI;									
+	}
+	while (dir_err < -PI) 
+	{
+		dir_err += 2*PI;									
+	}
+
+	fabs_dir_err = fabs(dir_err);
+
+	if (fabs_dir_err < min_dir_diff)
+	{
+		//d_Yaw = d_Yaw;
+	}
+	else
+	{
+		fabs_dir_err = min_dir_diff + (fabs_dir_err - min_dir_diff) * ratio_dir;
+	}
+
+	if (fabs_dir_err > max_dir_diff)
+	{
+		fabs_dir_err = max_dir_diff;
+	}
+
+	vel_dir_clib = vel_dir + fabs_dir_err * dir_err / (fabs(dir_err) + 1.0e-6);
+
+	m_Velocity.ve = v_norm * sin(vel_dir_clib);
+	m_Velocity.vn = v_norm * cos(vel_dir_clib);
 
 }
 

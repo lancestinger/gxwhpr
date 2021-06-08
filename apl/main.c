@@ -149,7 +149,7 @@ static void _thread_init(void* arg)
 	
     GLOBAL_HEX(thread_init_id);
     GLOBAL_PRINT((ANSI_DARK_RED"\r\n\r\nsystem initialize is OK!!!!!\r\n\r\n\r\n"ANSI_NONE));
-
+	osThreadTerminate(thread_init_id);
 
 	while(1)
 	{

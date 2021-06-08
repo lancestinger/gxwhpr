@@ -4,6 +4,11 @@
 #include <stdio.h>
 #include <math.h>
 
+
+#define MAX_VEL_CALIB_VALUE  1.25  // m/s
+#define MAX_VEL_VALUE   30.0      // m/s
+
+
 //static double sDt = 1.0;
 
 static double sP0_4_4[] = { 3.0, 0, 0, 0, 
@@ -67,6 +72,8 @@ static double m_X[4*1];
 
 static void ins_kalman_MeasureUpdate_Pos(double measurePos[], double std_e, double std_n);
 static void ins_kalman_MeasureUpdate_Vel(double measureVel[], double std_ve, double std_vn);
+
+static void ins_kalman_MeasureUpdate_AttiBias(double measure_dV[], double std_dve, double std_dvn);
 
 
 void ins_kalman_init()
@@ -135,7 +142,7 @@ void ins_kalman_MeasureUpdate(const ins_geopos_t* pPos, const ins_vel_t* pVel, i
 	double d_ve, d_vn;
 	double measureVel[2];
 
-
+	// pos fusion
 	if (NULL != pPos)
 	{
 		dLon = pPos->lng - pPosFus->lng;
@@ -161,6 +168,7 @@ void ins_kalman_MeasureUpdate(const ins_geopos_t* pPos, const ins_vel_t* pVel, i
 
 	}
 
+	// vel fusion
 	if (NULL != pVel)
 	{
 		d_ve = pVel->ve - pVelFus->ve;
@@ -335,4 +343,80 @@ static void ins_kalman_MeasureUpdate_Vel(double measureVel[], double std_ve, dou
 	// update matrix P
 	ins_matcpy(m_P, newP2, 4, 4);
 
+}
+
+static void ins_kalman_MeasureUpdate_AttiBias(double measure_dV[], double std_dve, double std_dvn)
+{
+	double Kk[4*2];
+	double KkT[2*4];
+	double Z[2*1];
+	//CMatrix I(sI4, 4, 4);
+	double I2[2*2];
+	double I4[4*4];
+
+	double m_H[2*4];
+	double m_HT[4*2];
+	double m_R[2*2];
+
+	double matTemp[4*2];
+	double matTemp2[2*2];
+	double matTemp2_inv[2*2];
+
+	double matI_KH[4*4];
+	double matI_KH_T[4*4];
+
+	//double m_X[4*1];
+
+	double newP[4*4];
+	double newP2[4*4];
+
+
+	insMat_Rowmjr_to_Colmjr(sH_Pos_2_4, 2, 4, m_H);
+	insMat_Colmjr_Transpose(m_H, 2, 4, m_HT);
+
+	insMat_Rowmjr_to_Colmjr(sR_Pos, 2, 2, m_R);
+	insMat_Rowmjr_to_Colmjr(sI2, 2, 2, I2);
+	insMat_Rowmjr_to_Colmjr(sI4, 4, 4, I4);
+
+	//
+	m_R[0] = std_dve*std_dve;
+	m_R[3] = std_dvn*std_dvn;
+
+	Z[0] = measure_dV[0];
+	Z[1] = measure_dV[1];
+
+	// matTemp = m_P *m_H.GetTranspose()
+	// matTemp2 = m_H *m_P *m_H.GetTranspose() + m_R
+	ins_matmul("NN", 4, 2, 4, 1.0, m_P, m_HT, 0.0, matTemp);
+	ins_matmul("NN", 2, 2, 4, 1.0, m_H, matTemp, 0.0, matTemp2);
+	ins_matmul("NN", 2, 2, 2, 1.0, I2, m_R, 1.0, matTemp2);
+
+	// 
+	ins_matcpy(matTemp2_inv, matTemp2, 2, 2);
+	ins_matinv(matTemp2_inv, 2);
+
+	// Kk = m_P *m_H.GetTranspose() * tmpMat.GetInverse();
+	ins_matmul("NN", 4, 2, 2, 1.0, matTemp, matTemp2_inv, 0.0, Kk);
+
+	insMat_Colmjr_Transpose(Kk, 4, 2, KkT);
+
+	// update state vector X
+	// mX = Kk * Z;
+	ins_matmul("NN", 4, 1, 2, 1.0, Kk, Z, 0.0, m_X);
+
+	// matI_KH = I - Kk *m_H;
+	ins_matcpy(matI_KH, I4, 4, 4);
+	ins_matmul("NN", 4, 4, 2, -1.0, Kk, m_H, 1.0, matI_KH);
+
+	// m_P = matI_KH * m_P * matI_KH.GetTranspose() + Kk * m_R *Kk.GetTranspose();
+	insMat_Colmjr_Transpose(matI_KH, 4, 4, matI_KH_T);
+
+	ins_matmul("NN", 4, 4, 4, 1.0, m_P, matI_KH_T, 0.0, newP);
+	ins_matmul("NN", 4, 4, 4, 1.0, matI_KH, newP, 0.0, newP2);
+
+	ins_matmul("NN", 4, 2, 2, 1.0, Kk, m_R, 0.0, matTemp);
+	ins_matmul("NN", 4, 4, 2, 1.0, matTemp, KkT, 1.0, newP2);
+
+	// update matrix P
+	ins_matcpy(m_P, newP2, 4, 4);
 }

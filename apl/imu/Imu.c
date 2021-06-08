@@ -67,6 +67,11 @@ static U8 XL_DRDY = 0;
 static U8 GY_DRDY = 0;
 static U8 MAG_DRDY = 0;
 
+//三项数据raw_data结构体声明
+static axis3bit16_t data_raw_angular_rate;
+static axis3bit16_t data_raw_acceleration;
+static axis3bit16_t data_raw_magnetic;
+
 //三项数据的数据量
 static int Accel_num = 0;
 static int Gy_num = 0;
@@ -94,7 +99,7 @@ static Self_calib Imu_self_cali;
 static int SELF_CALI_OVER = FALSE;
 
 //----------------------------thread initial-----------------------------------//
-static U64 thread_Imu_stk[SIZE_4K / 8];
+static U64 thread_Imu_stk[SIZE_4K / 4];
 static const osThreadAttr_t thread_Imu_attr = {
   .stack_mem  = &thread_Imu_stk[0],
   .stack_size = sizeof(thread_Imu_stk),
@@ -180,12 +185,12 @@ static void _Imu_thread(void * arg)
 	uint8_t  Locat_valid = 0;
 	uint8_t  Angle_valid = 0;
 	uint8_t  Veloc_valid = 0;
-	
+	static U8 flag = FALSE;
 	//U8 Time_out_flag = 0;
 
 	while(sysup_seconds_g<30)
 	{
-		GLOBAL_PRINT(("IMU NOW Self Calibriation!!\r\n"));
+		DBG_IMU_Print("IMU NOW Self Calibriation!!\r\n");
 		delay_ms(1000);
 	}
 
@@ -194,17 +199,32 @@ static void _Imu_thread(void * arg)
 	//设置加速度计和陀螺仪的三轴零偏
 	ins_set_ag_bias(XL_bias,GY_bias);
 	
-	GLOBAL_PRINT(("\r\n加速度计三轴零偏:%6.4f,%6.4f,%6.4f\r\n",XL_bias[0],XL_bias[1],XL_bias[2]));
-	GLOBAL_PRINT(("\r\n陀螺仪三轴零偏:%6.4f,%6.4f,%6.4f\r\n",GY_bias[0],GY_bias[1],GY_bias[2]));
+	DBG_IMU_Print("\r\n加速度计三轴零偏:%6.4f,%6.4f,%6.4f\r\n",XL_bias[0],XL_bias[1],XL_bias[2]);
+	DBG_IMU_Print("\r\n陀螺仪三轴零偏:%6.4f,%6.4f,%6.4f\r\n",GY_bias[0],GY_bias[1],GY_bias[2]);
 	
 	while(1)
 	{
 		Time_old = osKernelGetTickCount();
 		
+		while(NMEA_Data_ptr.GGA_DATA_READY_IMU !=TRUE || NMEA_Data_ptr.RMC_DATA_READY_IMU !=TRUE)
+		{
+			//waiting for flag of NMEA parse Over//
+			delay_ms(5);
+			Time_out = osKernelGetTickCount();
+			if((Time_out-Time_old) >22000)
+			{
+				Time_out = 0;
+				DBG_IMU_Print("IMU waiting for NMEA Time out!!\r\n");
+				break;
+			}
+		}
+		NMEA_Data_ptr.GGA_DATA_READY_IMU = FALSE;
+		NMEA_Data_ptr.RMC_DATA_READY_IMU = FALSE;
+		
 		IN_OUT_Init();//每次惯导计算清空输入输出结构体
 		
-		GLOBAL_PRINT(("\r\n加速度计三轴零偏:%6.4f,%6.4f,%6.4f\r\n",XL_bias[0],XL_bias[1],XL_bias[2]));
-		GLOBAL_PRINT(("\r\n陀螺仪三轴零偏:%6.4f,%6.4f,%6.4f\r\n",GY_bias[0],GY_bias[1],GY_bias[2]));
+		DBG_IMU_Print("\r\n加速度计三轴零偏:%6.4f,%6.4f,%6.4f\r\n",XL_bias[0],XL_bias[1],XL_bias[2]);
+		DBG_IMU_Print("\r\n陀螺仪三轴零偏:%6.4f,%6.4f,%6.4f\r\n",GY_bias[0],GY_bias[1],GY_bias[2]);
 
 		Delta_1PPS = UBX_1PPS_time - Old_1PPS;
 		
@@ -215,7 +235,7 @@ static void _Imu_thread(void * arg)
 		{
 			Locat_valid = FALSE;//位置无效
 			First_flag = TRUE;//方差误差等待第一帧有效
-			ERR_PRINT(("位置无效!!"));
+			DBG_IMU_Print("位置无效!!");
 		}else{
 			Locat_valid = TRUE;//位置有效
 		}
@@ -224,7 +244,7 @@ static void _Imu_thread(void * arg)
 		{
 			Veloc_valid = FALSE;
 			First_flag = TRUE;//方差误差等待第一帧有效
-			ERR_PRINT(("速度无效!!"));
+			DBG_IMU_Print("速度无效!!");
 		}else{
 			Veloc_valid = TRUE;
 		}
@@ -234,7 +254,7 @@ static void _Imu_thread(void * arg)
 		{
 			Heading = 0;
 			Angle_valid = FALSE;//角度无效
-			ERR_PRINT(("角度无效!!"));
+			DBG_IMU_Print("角度无效!!");
 		}else{
 			Heading = NMEA_Data_ptr.angle;
 			Angle_valid = TRUE;//角度有效
@@ -248,14 +268,14 @@ static void _Imu_thread(void * arg)
 			//坐标倒推计算与坐标系转换
 			if(Lat_Lon_ext(locat_Time,&Nav_location,&Nav_veloc)!=0)
 			{
-				ERR_PRINT(("Lat_Lon_ext ERROR!!\r\n"));
+				DBG_IMU_Print("Lat_Lon_ext ERROR!!\r\n");
 				Locat_valid = FALSE;//位置无效
 			}
 
 			
 			if(Std_Manage(&Nav_location,&Nav_veloc)!=0)
 			{
-				ERR_PRINT(("STD CALC ERROR!!\r\n"));
+				DBG_IMU_Print("STD CALC ERROR!!\r\n");
 				Locat_valid = FALSE;//位置无效
 			}
 			
@@ -265,7 +285,7 @@ static void _Imu_thread(void * arg)
 			First_flag = FALSE;
 		}
 				
-		GLOBAL_PRINT(("\r\nINPUT=%d,%d,%f,%f,%f,%f,%f,%f,%d,%f,%f,%f,%f,%f,%f,%d,%4.1f,\r\n",\
+		DBG_IMU_Print("\r\nINPUT=%d,%d,%f,%f,%f,%f,%f,%f,%d,%f,%f,%f,%f,%f,%f,%d,%4.1f,\r\n",\
 			locat_Time,\
 			Locat_valid,\
 			Nav_location.lat,Nav_location.lng,Nav_location.h,\
@@ -274,12 +294,12 @@ static void _Imu_thread(void * arg)
 			Nav_veloc.ve,Nav_veloc.vn,Nav_veloc.vu,\
 			Nav_veloc.std_ve,Nav_veloc.std_vn,Nav_veloc.std_vu,\
 			Angle_valid,\
-			Heading));
+			Heading);
 
 		////获取IMU调用时刻定时器计数
 		IMU_Time = osKernelGetTickCount();
 		
-		GLOBAL_PRINT(("\r\nIMU_Update_time = %d\r\n",IMU_Time));
+		DBG_IMU_Print("\r\nIMU_Update_time = %d\r\n",IMU_Time);
 		
 		////惯导计算
 		insNaviUpdate(IMU_Time, Imu_Accel, Accel_num, Imu_Mag, Mag_num, Imu_Gy, Gy_num);
@@ -313,15 +333,21 @@ static void _Imu_thread(void * arg)
 		////输出定位结果
 		ins_getFusionRslt(&Out_location,&Out_veloc,&Attid);
 		
-		GLOBAL_PRINT(("\r\nFusion_output = %f,%f,%f,%f,%f,%f\r\n",Out_location.lat,Out_location.lng,Out_location.h,Out_veloc.ve,Out_veloc.vn,Out_veloc.vu));
+		DBG_IMU_Print("\r\nFusion_output = %f,%f,%f,%f,%f,%f\r\n",Out_location.lat,Out_location.lng,Out_location.h,Out_veloc.ve,Out_veloc.vn,Out_veloc.vu);
 
-		GLOBAL_PRINT(("\r\nAttid = %f,%f,%f,%f,%f,%f\r\n\r\n",Attid.p,Attid.r,Attid.y,Attid.std_p,Attid.std_r,Attid.std_y));
+		DBG_IMU_Print("\r\nAttid = %f,%f,%f,%f,%f,%f\r\n\r\n",Attid.p,Attid.r,Attid.y,Attid.std_p,Attid.std_r,Attid.std_y);
 		
 		Delta_1PPS = 0;
 		IMU_Time = 0;
 		locat_Time = 0;
 		Fusion_Time = 0;
-
+		if(!flag){
+			HAL_GPIO_WritePin(GPIOD,GPIO_PIN_0,GPIO_PIN_SET);
+			flag = TRUE;
+		}else{
+			HAL_GPIO_WritePin(GPIOD,GPIO_PIN_0,GPIO_PIN_RESET);
+			flag = FALSE;
+		}
 	}
 }
 
@@ -408,20 +434,19 @@ void Imu_apl_init(void)
 	osThreadId_t thread_Imu_data_id = 0;
 
 	uint8_t rst=1;
-	//uint8_t	wtm_flag=0;
-	//iis2mdc_md_t op_mode=0;
-	//iis2mdc_odr_t ODR_val=0;
+	uint8_t	time_out=0;
 	int32_t ret = 0;
 	ism330dhcx_sh_cfg_read_t sh_cfg_read;
-	ism330dhcx_pin_int1_route_t *ISM330DHCX_pin_int1;
-	ism330dhcx_pin_int2_route_t *ISM330DHCX_pin_int2;
+	ism330dhcx_pin_int1_route_t *ISM330DHCX_pin_int1 = NULL;
+	ism330dhcx_pin_int2_route_t *ISM330DHCX_pin_int2 = NULL;
 	
 	ISM330DHCX_pin_int1 = (ism330dhcx_pin_int1_route_t*)GLOBAL_MALLOC(sizeof(ism330dhcx_pin_int1_route_t));
 	ISM330DHCX_pin_int2 = (ism330dhcx_pin_int2_route_t*)GLOBAL_MALLOC(sizeof(ism330dhcx_pin_int2_route_t));
 	GLOBAL_MEMSET(ISM330DHCX_pin_int1,PROPERTY_DISABLE,sizeof(ism330dhcx_pin_int1_route_t));
 	GLOBAL_MEMSET(ISM330DHCX_pin_int2,PROPERTY_DISABLE,sizeof(ism330dhcx_pin_int2_route_t));
 
-	//Initialize LSM330DHCX driver interface
+//------------Initialize LSM330DHCX & IIS2MDC driver interface--------------//
+
 	ag_ctx.write_reg = platform_write_hub_fifo;
 	ag_ctx.read_reg = platform_read_hub_fifo;
 	ag_ctx.handle = &spi4_handle;
@@ -431,61 +456,83 @@ void Imu_apl_init(void)
 	mag_ctx.Lis2_read_reg = Ism330dhcx_read_Iis2mdc_cx;
 	mag_ctx.handle = &spi4_handle;
 
-	//结构体初始化
+//---------------------------Struct Initial---------------------------------//
+
 	IN_OUT_Init();//输入输出结构体初始化
 	Self_cali_Init();//自校准初始化
 	Coordi_initial();//坐标转换初始化
 
 	NMEA_OPEN_SWITCH = 1;//开启惯导部分的GPS位置有效开关
 
-	whoamI = 0;
+//-------------------LSM330DHCX & IIS2MDC DRDY Initial--------------------//
 
-	/* Check lsm6dso ID. */
+	//关闭加速度计在INT1上的DRDY中断
+	ret = ism330dhcx_pin_int1_route_get(&ag_ctx, ISM330DHCX_pin_int1);
+	ISM330DHCX_pin_int1->int1_ctrl.int1_drdy_xl = PROPERTY_DISABLE;	
+	ret = ism330dhcx_pin_int1_route_set(&ag_ctx, ISM330DHCX_pin_int1);
+
+	//关闭陀螺仪在INT2上的DRDY中断
+	ret = ism330dhcx_pin_int2_route_get(&ag_ctx, ISM330DHCX_pin_int2);
+	ISM330DHCX_pin_int2->int2_ctrl.int2_drdy_g = PROPERTY_DISABLE;
+	ret = ism330dhcx_pin_int2_route_set(&ag_ctx, ISM330DHCX_pin_int2);
+
+//--------------------------Check LSM330DHCX ID---------------------------//
+
+#if 1
+	whoamI = 0; 
+
 	ism330dhcx_device_id_get(&ag_ctx, &whoamI);
 	while(whoamI != ISM330DHCX_ID)
 	{
-		ERR_PRINT(("ISM330DHCX ID get ERROR!!\r\n"));
-		GLOBAL_PRINT(("ISM330DHCX ID = %x\r\n\r\n",whoamI));
+		time_out++;
+		if(time_out>=100)
+		{
+			ERR_PRINT(("ISM330DHCX ID获取失败!!\r\n"));
+			ERR_PRINT(("ISM330DHCX ERROR ID = %x\r\n",whoamI));
+			time_out=0;
+			break;
+		}
 		ism330dhcx_device_id_get(&ag_ctx, &whoamI);
 		delay_ms(50);
 	}
-	GLOBAL_PRINT(("ISM330DHCX ID get OK!!!\r\n"));
-	GLOBAL_PRINT(("ISM330DHCX ID = %x\r\n\r\n",whoamI));
+	NOTE_PRINT(("ISM330DHCX ID = %x 获取成功!!!\r\n",whoamI));
+#endif
 
+//-------------------------LSM330DHCX RESET-------------------------------//
 
-	/* Restore default configuration. */
 	while(ism330dhcx_reset_set(&ag_ctx, PROPERTY_ENABLE))
 	{
 		GLOBAL_PRINT(("ism330dhcx is reseting!!\r\n"));
+		delay_ms(50);
 	}
 
 	do {
 		ism330dhcx_reset_get(&ag_ctx, &rst);
 	} while (rst);
 
-	GLOBAL_PRINT(("ism330dhcx Reset Success!!\r\n"));
+	NOTE_PRINT(("ism330dhcx 设备初始化完成!!\r\n"));
+
+//--------------------------Check IIS2MDC ID---------------------------//
 
 	whoamI = 0;
-#if 1
 
 	/* Check if LIS2MDC connected to Sensor Hub. */
-	ret = iis2mdc_device_id_get(&mag_ctx, &whoamI);
-	while(ret != 0)
-	{
-		ERR_PRINT(("iis2mdc ID get ret ERROR!!\r\n"));
-		ret = iis2mdc_device_id_get(&mag_ctx, &whoamI);
-		delay_ms(500);
-	}
-
 	while(whoamI != IIS2MDC_ID)//whoamI != IIS2MDC_ID
 	{
-		ERR_PRINT(("iis2mdc ID get ERROR!!\r\n"));
-		GLOBAL_PRINT(("iis2mdc ID = %d\r\n\r\n",whoamI));
+		time_out++;
+		if(time_out>=100)
+		{
+			ERR_PRINT(("iis2mdc ID获取失败!!\r\n"));
+			ERR_PRINT(("iis2mdc ERROR ID = %d\r\n",whoamI));
+			time_out=0;
+			break;
+		}
 		ret = iis2mdc_device_id_get(&mag_ctx, &whoamI);
-		delay_ms(500);
+		delay_ms(50);
 	}
-	GLOBAL_PRINT(("iis2mdc ID get OK!!!\r\n"));
-	GLOBAL_PRINT(("iis2mdc ID = %d\r\n\r\n",whoamI));
+	NOTE_PRINT(("iis2mdc ID = %x 获取成功!!!\r\n",whoamI));
+	
+//-------------------------IIS2MDC RESET-------------------------------//
 
 	ret = iis2mdc_reset_set(&mag_ctx, PROPERTY_ENABLE);
 	delay_ms(20);
@@ -497,16 +544,51 @@ void Imu_apl_init(void)
 			GLOBAL_PRINT(("iis2mdc is Reseting!\r\n"));
 		}
 	}while(rst);
-	GLOBAL_PRINT(("iis2mdc Reset Success!\r\n"));
+	NOTE_PRINT(("iis2mdc 设备初始化完成!!\r\n"));
+	
+//----------------------------IIS2MDC Configure---------------------------------//
 
-	/* Configure LIS2MDC. */
 	ret = iis2mdc_block_data_update_set(&mag_ctx, PROPERTY_ENABLE);//BDU OPEN
 	ret = iis2mdc_data_rate_set(&mag_ctx, IIS2MDC_ODR_50Hz);//IIS2MDC_ODR_20Hz
 	ret = iis2mdc_set_rst_mode_set(&mag_ctx, IIS2MDC_SENS_OFF_CANC_EVERY_ODR);//IIS2MDC_SENS_OFF_CANC_EVERY_ODR
 	ret = iis2mdc_offset_temp_comp_set(&mag_ctx, PROPERTY_ENABLE);//启动温度补偿
 	ret = iis2mdc_drdy_on_pin_set(&mag_ctx, PROPERTY_ENABLE);//DRDY ON
 	ret = iis2mdc_operating_mode_set(&mag_ctx, IIS2MDC_CONTINUOUS_MODE);//IIS2MDC_CONTINUOUS_MODE
+
+//----------------------LSM330DHCX Configure I2C Master--------------------//
+
+#if 1  
+	sh_cfg_read.slv_add = (IIS2MDC_I2C_ADD & 0xFEU) >> 1; 
+	sh_cfg_read.slv_subadd = IIS2MDC_OUTX_L_REG;
+	sh_cfg_read.slv_len = 3 * sizeof(int16_t);
+	ret = ism330dhcx_sh_slv0_cfg_read(&ag_ctx, &sh_cfg_read);
+	// Configure Sensor Hub to read one slave.
+	ret = ism330dhcx_sh_slave_connected_set(&ag_ctx, ISM330DHCX_SLV_0);
+	// Enable I2C Master.
+	ret = ism330dhcx_sh_master_set(&ag_ctx, PROPERTY_ENABLE);
 #endif
+
+//------------------------LSM330DHCX & IIS2MDC DRDY Configure-------------------//
+	//开启加速度计在INT1上的DRDY中断
+	ret = ism330dhcx_pin_int1_route_get(&ag_ctx, ISM330DHCX_pin_int1);
+	ISM330DHCX_pin_int1->int1_ctrl.int1_drdy_xl = PROPERTY_ENABLE;	
+	ret = ism330dhcx_pin_int1_route_set(&ag_ctx, ISM330DHCX_pin_int1);
+
+	//开启陀螺仪在INT2上的DRDY中断
+	ret = ism330dhcx_pin_int2_route_get(&ag_ctx, ISM330DHCX_pin_int2);
+	ISM330DHCX_pin_int2->int2_ctrl.int2_drdy_g = PROPERTY_ENABLE;
+	ret = ism330dhcx_pin_int2_route_set(&ag_ctx, ISM330DHCX_pin_int2);
+
+//--------------------------------------LSM330DHCX XL&GY Configure---------------------------------------------------//
+
+	ret = ism330dhcx_block_data_update_set(&ag_ctx, PROPERTY_ENABLE);//PROPERTY_ENABLE
+	ret = ism330dhcx_data_ready_mode_set(&ag_ctx, ISM330DHCX_DRDY_PULSED);//ISM330DHCX_DRDY_PULSED
+	ret = ism330dhcx_xl_full_scale_set(&ag_ctx, ISM330DHCX_2g);
+	ret = ism330dhcx_gy_full_scale_set(&ag_ctx, ISM330DHCX_500dps);//ISM330DHCX_2000dps
+	ret = ism330dhcx_xl_data_rate_set(&ag_ctx, ISM330DHCX_XL_ODR_52Hz);//ISM330DHCX_XL_ODR_12Hz5//ISM330DHCX_XL_ODR_26Hz
+	ret = ism330dhcx_gy_data_rate_set(&ag_ctx, ISM330DHCX_GY_ODR_52Hz);//ISM330DHCX_GY_ODR_12Hz5//ISM330DHCX_GY_ODR_26Hz
+
+//--------------------------------------FIFO ENABLE/DISABLE----------------------------------------------------------//
 #if 0 //FIFO ENABLE/DISABLE
 
 	/*
@@ -548,53 +630,18 @@ void Imu_apl_init(void)
 	ret = ism330dhcx_fifo_gy_batch_set(&ag_ctx, ISM330DHCX_GY_BATCHED_AT_104Hz); 
 	ret = ism330dhcx_gy_lp1_bandwidth_set(&ag_ctx,ISM330DHCX_AGGRESSIVE);
 #endif
-	/*
-	* Prepare sensor hub to read data from external Slave0 continuously
-	* in order to store data in FIFO.
-	*/
-#if 1  
-	sh_cfg_read.slv_add = (IIS2MDC_I2C_ADD & 0xFEU) >> 1; 
-	sh_cfg_read.slv_subadd = IIS2MDC_OUTX_L_REG;
-	sh_cfg_read.slv_len = 3 * sizeof(int16_t);
-	ret = ism330dhcx_sh_slv0_cfg_read(&ag_ctx, &sh_cfg_read);
-	// Configure Sensor Hub to read one slave.
-	ret = ism330dhcx_sh_slave_connected_set(&ag_ctx, ISM330DHCX_SLV_0);
-	// Enable I2C Master.
-	ret = ism330dhcx_sh_master_set(&ag_ctx, PROPERTY_ENABLE);
-#endif
+//-----------------------------------------------------------------------------------------------------------------//
 
-	//开启加速度计在INT1上的DRDY中断
-	ret = ism330dhcx_pin_int1_route_get(&ag_ctx, ISM330DHCX_pin_int1);
-	ISM330DHCX_pin_int1->int1_ctrl.int1_drdy_xl = PROPERTY_ENABLE;	
-	ret = ism330dhcx_pin_int1_route_set(&ag_ctx, ISM330DHCX_pin_int1);
-
-	//开启陀螺仪在INT2上的DRDY中断
-	ret = ism330dhcx_pin_int2_route_get(&ag_ctx, ISM330DHCX_pin_int2);
-	ISM330DHCX_pin_int2->int2_ctrl.int2_drdy_g = PROPERTY_ENABLE;
-	ret = ism330dhcx_pin_int2_route_set(&ag_ctx, ISM330DHCX_pin_int2);
-	
-	ret = ism330dhcx_block_data_update_set(&ag_ctx, PROPERTY_ENABLE);//PROPERTY_ENABLE
-	ret = ism330dhcx_data_ready_mode_set(&ag_ctx, ISM330DHCX_DRDY_PULSED);//ISM330DHCX_DRDY_PULSED
-	ret = ism330dhcx_xl_full_scale_set(&ag_ctx, ISM330DHCX_2g);
-	ret = ism330dhcx_gy_full_scale_set(&ag_ctx, ISM330DHCX_500dps);//ISM330DHCX_2000dps
-	ret = ism330dhcx_xl_data_rate_set(&ag_ctx, ISM330DHCX_XL_ODR_52Hz);//ISM330DHCX_XL_ODR_12Hz5//ISM330DHCX_XL_ODR_26Hz
-	ret = ism330dhcx_gy_data_rate_set(&ag_ctx, ISM330DHCX_GY_ODR_52Hz);//ISM330DHCX_GY_ODR_12Hz5//ISM330DHCX_GY_ODR_26Hz
-
-
-	NOTE_PRINT(("ism330dhcx and iis2mdc Initial OK!!\r\n"));
-#if 1
+	free(ISM330DHCX_pin_int1);
+	free(ISM330DHCX_pin_int2);
+	NOTE_PRINT(("ISM330DHCX & IIS2MDC Initial OK!!\r\n"));
 
 	thread_Imu_id = osThreadNew(_Imu_thread, NULL, &thread_Imu_attr);
 	GLOBAL_HEX(thread_Imu_id);
 	
 	thread_Imu_data_id = osThreadNew(_Imu_data_thread, NULL, &thread_Imu_data_attr);
 	GLOBAL_HEX(thread_Imu_data_id);
-
-#endif
 }
-
-
-
 
 /*
  * @brief  Write generic device register (platform dependent)
@@ -649,34 +696,32 @@ static int32_t platform_read_hub_fifo(void *handle, uint8_t Reg, uint8_t *Bufp, 
 	int32_t ret=0;
 	
 	if (handle == &spi4_handle){
-    /* Read command */
-    Reg |= 0x80;
-	gpio_drv_set(GPIO_ISM330_SS, LEVEL_LOW);
-    ret = HAL_SPI_Transmit(handle, &Reg, 1, 1000);
-	if(ret!=0)
-	{
-		ERR_PRINT(("Imu ReadTransmit ERROR!!\r\n"));
-		ERR_PRINT(("Register is: %d\r\n",Reg));
-	}
-
-    ret = HAL_SPI_Receive(handle, Bufp, len, 1000);
-	if(ret!=0)
-	{
-		ERR_PRINT(("Imu READ ERROR!!ret = %d\r\n",ret));
-		ERR_PRINT(("Register is: %d\r\n",Reg));
-		ERR_PRINT(("Bufp is: %d\r\n",Bufp));
-	}
-	gpio_drv_set(GPIO_ISM330_SS, LEVEL_HIGH);
-  }else{
-      HAL_I2C_Mem_Read(handle, ISM330DHCX_I2C_ADD_H, Reg,
-                       I2C_MEMADD_SIZE_8BIT, Bufp, len, 1000);
-  }
-  return ret;
+	    /* Read command */
+	    Reg |= 0x80;
+		gpio_drv_set(GPIO_ISM330_SS, LEVEL_LOW);
+	    ret = HAL_SPI_Transmit(handle, &Reg, 1, 3000);
+		if(ret!=0)
+		{
+			ERR_PRINT(("Imu ReadTransmit ERROR!!\r\n"));
+			ERR_PRINT(("Register is: %d\r\n",Reg));
+		}
+		delay_ms(2);
+	    ret = HAL_SPI_Receive(handle, Bufp, len, 3000);
+		if(ret!=0)
+		{
+			ERR_PRINT(("Imu READ ERROR!!ret = %d\r\n",ret));
+			ERR_PRINT(("Register is: %d\r\n",Reg));
+			ERR_PRINT(("Bufp is: %d\r\n",Bufp));
+		}
+		gpio_drv_set(GPIO_ISM330_SS, LEVEL_HIGH);
+  	}
+  
+  	return ret;
 }
 
 
 /*
- * @brief  Write lsm2mdl device register (used by configuration functions)
+ * @brief  Write lsm2mdc device register (used by configuration functions)
  *
  * @param  handle    customizable argument. In this examples is used in
  *                   order to select the correct sensor bus handler.
@@ -731,7 +776,7 @@ static int32_t Ism330dhcx_write_Iis2mdc_cx(void* ctx, uint8_t reg, uint8_t* data
 }
 
 /*
- * @brief  Read lsm2mdl device register (used by configuration functions)
+ * @brief  Read lsm2mdc device register (used by configuration functions)
  *
  * @param  handle    customizable argument. In this examples is used in
  *                   order to select the correct sensor bus handler.
@@ -810,10 +855,7 @@ void Imu_Mag_data_get(void)
 	static uint8_t k=0;
 	uint8_t i=0;
 	uint8_t emb_sh[18]={0};
-	
-	axis3bit16_t data_raw_magnetic;
 
-	//Mag_count = osKernelGetTickCount();
 	if(k>IMU_DATA_MAX_NUM-1)
 	{ 
 	  for(i=0;i<k-1;i++)
@@ -823,7 +865,6 @@ void Imu_Mag_data_get(void)
 		  Imu_Mag[i].z = Imu_Mag[i+1].z;
 		  Imu_Mag[i].t = Imu_Mag[i+1].t;
 	  }   
-	
 	  k--;
 	}
 	
@@ -834,7 +875,7 @@ void Imu_Mag_data_get(void)
 	magnetic_mG[0] = IIS2MDC_FROM_LSB_TO_mG(data_raw_magnetic.i16bit[0]);
 	magnetic_mG[1] = IIS2MDC_FROM_LSB_TO_mG(data_raw_magnetic.i16bit[1]);
 	magnetic_mG[2] = IIS2MDC_FROM_LSB_TO_mG(data_raw_magnetic.i16bit[2]);
-	//GLOBAL_PRINT(("Mag[mG]:%d,%4.2f,%4.2f,%4.2f\r\n",Mag_count,magnetic_mG[0],magnetic_mG[1],magnetic_mG[2]));
+	DBG_IMU_RAW_Print("Mag[mG]:%d,%4.2f,%4.2f,%4.2f\r\n",Mag_count,magnetic_mG[0],magnetic_mG[1],magnetic_mG[2]);
 
 	Imu_Mag[k].x = magnetic_mG[0]*0.1;//单位转换为 μT
 	Imu_Mag[k].y = magnetic_mG[1]*0.1;
@@ -849,10 +890,6 @@ void Imu_Gy_data_get(void)
 	static uint8_t k=0;
 	uint8_t i=0;
 	
-	axis3bit16_t data_raw_angular_rate;
-
-	//Gy_count = osKernelGetTickCount();
-	
 	if(k>IMU_DATA_MAX_NUM-1)
 	{ 
 	  for(i=0;i<k-1;i++)
@@ -862,7 +899,6 @@ void Imu_Gy_data_get(void)
 		  Imu_Gy[i].z = Imu_Gy[i+1].z;
 		  Imu_Gy[i].t = Imu_Gy[i+1].t;
 	  }   
-	
 	  k--;
 	}
 	
@@ -874,7 +910,7 @@ void Imu_Gy_data_get(void)
 	angular_rate_mdps[1] = ism330dhcx_from_fs500dps_to_mdps(data_raw_angular_rate.i16bit[1]);
 	angular_rate_mdps[2] = ism330dhcx_from_fs500dps_to_mdps(data_raw_angular_rate.i16bit[2]);
 	
-	//GLOBAL_PRINT(("GY[mdps]:%d,%4.2f,%4.2f,%4.2f\r\n",Gy_count,angular_rate_mdps[0],angular_rate_mdps[1],angular_rate_mdps[2]));
+	DBG_IMU_RAW_Print("GY[mdps]:%d,%4.2f,%4.2f,%4.2f\r\n",Gy_count,angular_rate_mdps[0],angular_rate_mdps[1],angular_rate_mdps[2]);
 
 	Imu_Gy[k].x = angular_rate_mdps[0]*DEG2RAD/1000;//单位转换为 rad/s
 	Imu_Gy[k].y = angular_rate_mdps[1]*DEG2RAD/1000;
@@ -891,7 +927,7 @@ void Imu_Gy_data_get(void)
 		GY_bias[1] = Imu_self_cali.SUM_Gy_y/Imu_self_cali.Num_Gy;
 		GY_bias[2] = Imu_self_cali.SUM_Gy_z/Imu_self_cali.Num_Gy;
 	}
-	
+
 	k++;
 	Gy_num = k;	
 }
@@ -903,10 +939,6 @@ void Imu_Acce_data_get(void)
 	static uint8_t k=0;
 	uint8_t i=0;
 	
-	axis3bit16_t data_raw_acceleration;
-
-	//Accel_count = osKernelGetTickCount();
-	
 	if(k>IMU_DATA_MAX_NUM-1)
 	{ 
 	  for(i=0;i<k-1;i++)
@@ -916,7 +948,6 @@ void Imu_Acce_data_get(void)
 		  Imu_Accel[i].z = Imu_Accel[i+1].z;
 		  Imu_Accel[i].t = Imu_Accel[i+1].t;
 	  }   
-	
 	  k--;
 	}
 	
@@ -928,11 +959,11 @@ void Imu_Acce_data_get(void)
 	acceleration_mg[1] = ism330dhcx_from_fs2g_to_mg(data_raw_acceleration.i16bit[1]);
 	acceleration_mg[2] = ism330dhcx_from_fs2g_to_mg(data_raw_acceleration.i16bit[2]);
 	
-	//GLOBAL_PRINT(("Accel[mg]:%d,%4.2f,%4.2f,%4.2f\r\n",Accel_count,acceleration_mg[0],acceleration_mg[1],acceleration_mg[2]));
+	DBG_IMU_RAW_Print("Accel[mg]:%d,%4.2f,%4.2f,%4.2f\r\n",Accel_count,acceleration_mg[0],acceleration_mg[1],acceleration_mg[2]);
 
-	Imu_Accel[k].x = acceleration_mg[0]/1000/NORMAL_G;//单位转换为 m/s^2
-	Imu_Accel[k].y = acceleration_mg[1]/1000/NORMAL_G;
-	Imu_Accel[k].z = acceleration_mg[2]/1000/NORMAL_G;
+	Imu_Accel[k].x = (acceleration_mg[0]/1000)*NORMAL_G;//单位转换为 m/s^2
+	Imu_Accel[k].y = (acceleration_mg[1]/1000)*NORMAL_G;
+	Imu_Accel[k].z = (acceleration_mg[2]/1000)*NORMAL_G;
 
 	//For self init//
 	if(sysup_seconds_g<30 && SELF_CALI_OVER == FALSE)

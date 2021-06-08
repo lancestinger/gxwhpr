@@ -293,7 +293,7 @@ int Lat_Lon_ext(uint32_t time, ins_geopos_t *Nav_locat, ins_vel_t *Nav_vel)
 	if(time - UBX_1PPS_time <= 0)
 	{
 		delta_t = 0;
-		ERR_PRINT(("1PPS ERROR!!\r\n"));
+		DBG_IMU_Print("1PPS ERROR!!\r\n");
 		return -1;
 	}
 	else
@@ -316,7 +316,7 @@ int Lat_Lon_ext(uint32_t time, ins_geopos_t *Nav_locat, ins_vel_t *Nav_vel)
 
 	if(angle<0||angle>=360||delta_t<=0||lat>90||lat<-90||lon>180||lon<-180||V<0)
 	{
-		ERR_PRINT(("NMEA Data ERROR!!\r\n"));
+		DBG_IMU_Print("NMEA Data ERROR!!\r\n");
 		return -1;
 	}
 	else if(angle>=0 && angle<360)

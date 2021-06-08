@@ -233,7 +233,9 @@ void spi_drv_init(void)
 		{
 			gpio_initure.Pin = spi_drv_cfg[i].nss_gpio_pin;
 			gpio_initure.Mode = GPIO_MODE_OUTPUT_PP;
-			gpio_initure.Pull = GPIO_PULLUP;
+			gpio_initure.Pull = GPIO_PULLUP;//GPIO_PULLUP
+			if(i==SPI_4)
+				gpio_initure.Pull = GPIO_NOPULL;//GPIO_PULLUP
 			gpio_initure.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
 			HAL_GPIO_Init(spi_drv_cfg[i].nss_gpio_port, &gpio_initure);
 			HAL_GPIO_WritePin(spi_drv_cfg[i].nss_gpio_port, spi_drv_cfg[i].nss_gpio_pin, GPIO_PIN_SET);

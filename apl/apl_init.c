@@ -69,6 +69,8 @@ static void Led_light_int(void)
 	HAL_GPIO_WritePin(GPIOC,GPIO_PIN_12,GPIO_PIN_RESET);
 	delay_ms(5);
 	HAL_GPIO_WritePin(GPIOD,GPIO_PIN_3,GPIO_PIN_RESET);
+	delay_ms(5);
+	HAL_GPIO_WritePin(GPIOD,GPIO_PIN_0,GPIO_PIN_RESET);
 	delay_ms(1000);
 	HAL_GPIO_WritePin(GPIOA,GPIO_PIN_15,GPIO_PIN_SET);
 	delay_ms(5);
@@ -79,6 +81,8 @@ static void Led_light_int(void)
 	HAL_GPIO_WritePin(GPIOC,GPIO_PIN_12,GPIO_PIN_SET);
 	delay_ms(5);
 	HAL_GPIO_WritePin(GPIOD,GPIO_PIN_3,GPIO_PIN_SET);
+	delay_ms(5);
+	HAL_GPIO_WritePin(GPIOD,GPIO_PIN_0,GPIO_PIN_SET);
 	delay_ms(1000);
 
 
@@ -106,8 +110,8 @@ void apl_init(void)
 	update_apl_init();
 	iotclient_init();
 	Ntrip_apl_Init();
-	//EH_uwb_apl_init();
-	//Imu_apl_init();
+//	EH_uwb_apl_init();
+	Imu_apl_init();
 	Server_apl_init();
 	UWB_apl_init();
 	

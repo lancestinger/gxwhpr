@@ -15,12 +15,12 @@ static cQuaternion m_Quat;
 
 static void CalAcceMagMeanValue(imu_data_t AcceData[], imu_data_t MagData[], imu_data_t *pAcceMean, imu_data_t *pMagMean);
 static int GetRb2L_From_AcceMagVector(imu_data_t AcceData, imu_data_t MagData, double fRb2L[]);
-static int GetAttitude_From_AcceMag(imu_data_t AcceData[], imu_data_t MagData[], ins_atti_t* pAtti);
+//static int GetAttitude_From_AcceMag(imu_data_t AcceData[], imu_data_t MagData[], ins_atti_t* pAtti);
 static void getQ_From_Rb2L(double Rb2L[], cQuaternion* Q);
 static void GetRb2L_From_Q(const cQuaternion* pQuart, double Rb2L[]);
 static void GetRb2L_From_Attitude(ins_atti_t Atti, double Rb2L[]);
 static void GetAttitude_From_Rb2L(double Rb2L[], ins_atti_t* pAtti);
-static void AttitudeCalibFromMag(ins_atti_t* pMagAtti);
+static void AttitudeCalibFromMag(int epoch, ins_atti_t* pMagAtti);
 
 
 int attiInited()
@@ -341,7 +341,7 @@ void ins_AttiUpdateSec(imu_data_t GyroData[])
 	int ti;
 
 	//memcpy(&m_Quat_Pre, &m_Quat, sizeof(m_Quat));
-	GLOBAL_MEMCPY(&tQ, &m_Quat, sizeof(m_Quat));
+	memcpy(&tQ, &m_Quat, sizeof(m_Quat));
 
 	for (ti = 0; ti < tCount; ti++)
 	{
@@ -365,7 +365,7 @@ void ins_AttiUpdateSec(imu_data_t GyroData[])
 		m_Quat.q2 = ta* tQ.q2 + tb*tD_Ang_y*tQ.q0 - tb*tD_Ang_z*tQ.q1 + tb*tD_Ang_x*tQ.q3;
 		m_Quat.q3 = ta* tQ.q3 + tb*tD_Ang_z*tQ.q0 + tb*tD_Ang_y*tQ.q1 - tb*tD_Ang_x*tQ.q2;
 
-		GLOBAL_MEMCPY(&tQ, &m_Quat, sizeof(m_Quat));
+		memcpy(&tQ, &m_Quat, sizeof(m_Quat));
 	}
 	q_Norm = (float)sqrt(m_Quat.q0 * m_Quat.q0 + m_Quat.q1 * m_Quat.q1 + m_Quat.q2 * m_Quat.q2 + m_Quat.q3 * m_Quat.q3);
 	m_Quat.q0 = m_Quat.q0 / q_Norm;
@@ -398,7 +398,7 @@ void ins_AttitUpdate(const imu_data_t *pGyroData, float dt)
 		tb = (float)(sin(tD_Ang/2) / tD_Ang);
 	}
 
-	GLOBAL_MEMCPY(&tQ, &m_Quat, sizeof(m_Quat));
+	memcpy(&tQ, &m_Quat, sizeof(m_Quat));
 	m_Quat.q0 = ta* tQ.q0 - tb*tD_Ang_x*tQ.q1 - tb*tD_Ang_y*tQ.q2 - tb*tD_Ang_z*tQ.q3;
 	m_Quat.q1 = ta* tQ.q1 + tb*tD_Ang_x*tQ.q0 + tb*tD_Ang_z*tQ.q2 - tb*tD_Ang_y*tQ.q3;
 	m_Quat.q2 = ta* tQ.q2 + tb*tD_Ang_y*tQ.q0 - tb*tD_Ang_z*tQ.q1 + tb*tD_Ang_x*tQ.q3;
@@ -411,15 +411,15 @@ void ins_AttitUpdate(const imu_data_t *pGyroData, float dt)
 	m_Quat.q3 = m_Quat.q3 / q_Norm;	
 }
 
-void ins_AttiClibBySnsr(imu_data_t AcceData[], imu_data_t MagData[])
+void ins_AttiClibBySnsr(int epoch, imu_data_t AcceData[], imu_data_t MagData[])
 {
 	ins_atti_t magAtti;
 	
 	GetAttitude_From_AcceMag(AcceData, MagData, &magAtti);
-	AttitudeCalibFromMag(&magAtti);
+	AttitudeCalibFromMag(epoch, &magAtti);
 }
 
-void AttitudeCalibFromMag(ins_atti_t* pMagAtti)
+void AttitudeCalibFromMag(int epoch, ins_atti_t* pMagAtti)
 {
 	//float PI = 3.14159;
 	ins_atti_t GyroAtti;
@@ -429,13 +429,40 @@ void AttitudeCalibFromMag(ins_atti_t* pMagAtti)
 	double d_Yaw;
 	double fabs_attiDiff;
 
-	double ratio_P_R = 0.25;
-	double min_P_R_diff = 3.0 * DEG2RAD;
-	double max_P_R_diff = 15.0 * DEG2RAD;
+	int epoch_maxCnt = 120;
 
-	double ratio_Yaw = 0.1;
-	double min_Yaw_diff = 1.0 * DEG2RAD;
-	double max_Yaw_diff = 3.0 * DEG2RAD;
+	double ratio_P_R_max = 0.1;
+	double min_P_R_diff_max = 1.0 * DEG2RAD;
+	double max_P_R_diff_max = 5.0 * DEG2RAD;
+
+	double ratio_P_R_min = 0.02;
+	double min_P_R_diff_min = 0.005 * DEG2RAD;
+	double max_P_R_diff_min = 0.02 * DEG2RAD;
+
+	double ratio_P_R;
+	double min_P_R_diff;
+	double max_P_R_diff;
+
+	// yaw
+	double ratio_Yaw = 0.01;
+	double min_Yaw_diff = 0.005 * DEG2RAD;
+	double max_Yaw_diff = 0.010 * DEG2RAD;
+
+	ratio_P_R = (epoch_maxCnt - epoch) * ratio_P_R_max / epoch_maxCnt;
+	if (ratio_P_R < ratio_P_R_min)
+	{
+		ratio_P_R = ratio_P_R_min;
+	}
+	min_P_R_diff = (epoch_maxCnt - epoch) * min_P_R_diff_max / epoch_maxCnt;
+	if (min_P_R_diff < min_P_R_diff_min)
+	{
+		min_P_R_diff = min_P_R_diff_min;
+	}
+	max_P_R_diff = (epoch_maxCnt - epoch) * max_P_R_diff_max / epoch_maxCnt;
+	if (max_P_R_diff < max_P_R_diff_min)
+	{
+		max_P_R_diff = max_P_R_diff_min;
+	}
 
 	GetRb2L_From_Q(&m_Quat, m_Rb2L);
 	GetAttitude_From_Rb2L(m_Rb2L, &GyroAtti);
@@ -518,7 +545,7 @@ void AttitudeCalibFromMag(ins_atti_t* pMagAtti)
 
 
 // heading : [0, 360), in clockwise
-void ins_HeadingCalibOuter(float heading)
+void ins_HeadingCalibOuter(int epoch, float heading)
 {
 	float yaw = -heading * DEG2RAD;
 
@@ -526,9 +553,35 @@ void ins_HeadingCalibOuter(float heading)
 	double d_Yaw;
 	double fabs_d_Yaw;
 
-	double ratio_Yaw = 0.25;
-	double min_Yaw_diff = 3.0 * DEG2RAD;
-	double max_Yaw_diff = 15.0 * DEG2RAD;
+	int epoch_maxCnt = 120;
+
+	double ratio_Yaw_max = 0.10;
+	double min_Yaw_diff_max = 2.0 *DEG2RAD;
+	double max_Yaw_diff_max = 10.0 * DEG2RAD;  // 0.25
+
+	double ratio_Yaw_min = 0.025; // 0.05
+	double min_Yaw_diff_min = 0.1 * DEG2RAD; // 0.25
+	double max_Yaw_diff_min = 0.5 * DEG2RAD;  // 0.25
+
+	double ratio_Yaw;
+	double min_Yaw_diff;
+	double max_Yaw_diff;
+
+	ratio_Yaw = (epoch_maxCnt - epoch) * ratio_Yaw_max / epoch_maxCnt;
+	if (ratio_Yaw < ratio_Yaw_min)
+	{
+		ratio_Yaw = ratio_Yaw_min;
+	}
+	min_Yaw_diff = (epoch_maxCnt - epoch) * min_Yaw_diff_max / epoch_maxCnt;
+	if (min_Yaw_diff < min_Yaw_diff_min)
+	{
+		min_Yaw_diff = min_Yaw_diff_min;
+	}
+	max_Yaw_diff = (epoch_maxCnt - epoch) * max_Yaw_diff_max / epoch_maxCnt;
+	if (max_Yaw_diff < max_Yaw_diff_min)
+	{
+		max_Yaw_diff = max_Yaw_diff_min;
+	}
 
 	GetRb2L_From_Q(&m_Quat, m_Rb2L);
 	GetAttitude_From_Rb2L(m_Rb2L, &GyroAtti);

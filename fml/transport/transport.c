@@ -78,7 +78,7 @@ int transport_sendPacketBuffer(unsigned char* buf, int buflen)
 {
 	int rc = 0;
 
-	rc = send (mysock, (char *)buf, buflen, 0);
+	rc = send (mysock, (char *)buf, buflen, MSG_DONTWAIT);
 
     if(rc>0)
     {
@@ -134,7 +134,7 @@ int transport_getdata(unsigned char* buf, int count)
 /*·Ç×èÈûÄ£Ê½*/
 int transport_getdatanb(unsigned char* buf, int count)
 {
-	int rc = recv(mysock, (char*)buf, count, 0);
+	int rc = recv(mysock, (char*)buf, count, MSG_DONTWAIT);
     if(rc>0)
     {
         //DBG_SERVER_Print(("received %d bytes count,data:", (int)count));
@@ -145,6 +145,18 @@ int transport_getdatanb(unsigned char* buf, int count)
         }
         */
         //DBG_SERVER_Print(("\r\n"));
+    }
+	else if(rc==-8)
+    {
+        DBG_MQTT_Print("Waiting for cmd, MQTT alive!\r\n");
+    }
+    else if(rc==-14)
+    {//BSD_ECONNRESET
+        DBG_MQTT_Print("Connection reset by the peer");
+		MQTT_OFF_LINE = TRUE;
+        iotDev.sta = IOT_STA_INIT;
+		iotRTCMDev.sta = IOT_STA_INIT;
+		iotCmdDev.sta = IOT_STA_INIT;
     }
     else
     {

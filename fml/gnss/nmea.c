@@ -28,7 +28,7 @@
 #include "apl/imu/ins_baseparams.h"
 #include "apl/imu/Coordi_transfer.h"
 #include "apl/server/server_apl.h"
-#include "drv/meas/meas_distance.h"
+#include "uwb_post/uwb_post.h"
 
 /*------------------------------头文件------------------------------*/
 
@@ -102,13 +102,9 @@ char Sys_UTC[20]={0};
 int FIRST_UWB_GGA = TRUE;
 int FIRST_UWB_RMC = TRUE;
 
-
-
 U32 UBX_1PPS_time = 0;//GPS接收机1PPS时间计数
 U8 Origin_flag = 0;//坐标转换原点标志
-U8 GGA_DATA_READY = 0;//GGA数据采集完毕标志
-U8 RMC_DATA_READY = 0;//RMC数据采集完毕标志
-U8 NMEA_OPEN_SWITCH = 0;
+U8 NMEA_OPEN_SWITCH = 0;//IMU获取NMEA开关
 
 
 /*------------------------------函数声明------------------------------*/
@@ -508,10 +504,10 @@ static void _gnss_parse_gga(IN U8 *data_ptr,IN U32 len)
     {
     	ref_valid_flag = FALSE;
     }
-
-	GGA_DATA_READY++;
-
 	
+	NMEA_Data_ptr.GGA_DATA_READY = TRUE;
+	NMEA_Data_ptr.GGA_DATA_READY_IMU = TRUE;
+
 	/* Check machine status */
 	//main_handle_g.p_ref_handle->ref_status[REF_GNSS] = ref_check_valid(REF_GNSS, &gnss_condition_cnt, ref_valid_flag);
 	/*mult_handle_g.ref_handle.ref_status[REF_GNSS] = sys_ref_check_valid(REF_GNSS,
@@ -575,8 +571,8 @@ static void _gnss_parse_rmc(IN U8 *data_ptr,IN U32 len)
 	{
 		GLOBAL_SSCANF((char *)str_buf,"%f",&Veloc);
 		NMEA_Data_ptr.veloc = (double)(Veloc*KNToMS);
-		//GLOBAL_PRINT(("NMEA Veloc  = %f\r\n",Veloc));		
-		//GLOBAL_PRINT(("NMEA Veloc Get = %f\r\n",NMEA_Data_ptr.veloc));
+		DBG_IMU_Print("NMEA Veloc  = %f\r\n",Veloc);		
+		DBG_IMU_Print("NMEA Veloc Get = %f\r\n",NMEA_Data_ptr.veloc);
 		VELOC_VALID = 1;
 		Veloc=0;
 	}
@@ -594,7 +590,7 @@ static void _gnss_parse_rmc(IN U8 *data_ptr,IN U32 len)
 		FIRST_ANGLE_GET = TRUE;
 		GLOBAL_SSCANF((char *)str_buf,"%f",&Angle);
 		NMEA_Data_ptr.angle = Angle;
-		//GLOBAL_PRINT(("NMEA Angle Get = %f\r\n",NMEA_Data_ptr.angle));
+		DBG_IMU_Print("NMEA Angle Get = %f\r\n",NMEA_Data_ptr.angle);
 		Angle=0;
 	}
 
@@ -611,9 +607,9 @@ static void _gnss_parse_rmc(IN U8 *data_ptr,IN U32 len)
 		//GLOBAL_PRINT(("DATE = %s\r\n",Sys_Date));
 		Date_ptr = 0;
 	}
-
-	RMC_DATA_READY++;
-
+	
+	NMEA_Data_ptr.RMC_DATA_READY = TRUE;
+	NMEA_Data_ptr.RMC_DATA_READY_IMU = TRUE;
 }
 
 
@@ -1017,8 +1013,6 @@ U8 gnss_nmea_data_process(IN U8 *data_ptr, IN U32 len)
 			break;
 		}
 	}
-
-
 	if (!cmd_found)
 	{
 		return FALSE;
@@ -1026,11 +1020,6 @@ U8 gnss_nmea_data_process(IN U8 *data_ptr, IN U32 len)
 
 	/* Parse CMD */
 	_ext_ref_parse_nmea((GNSS_NMEA_MSG_ENUM)i, data_ptr, len);
-
-//
-	char *pt = encode_Json();
-	//GLOBAL_PRINT(("UDP Json: %s\r\n",pt));
-	GLOBAL_FREE(pt);
 	return TRUE;
 }
 

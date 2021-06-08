@@ -34,15 +34,22 @@ typedef enum
     SYS_DEBUG_JSON,             //JSON打印
     SYS_DEBUG_USARTCTRL,        //串口控制设备打印
     SYS_DEBUG_SAT,
-    SYS_DEBUG_POST,             //UWB信息打印
- 	SYS_DEBUG_POST_WARNING,       //定位警告信息	
+    SYS_DEBUG_EFS_GENERAL,					//UWB一般信息打印    
+    SYS_DEBUG_EFS_POST,							//UWB定位信息打印
+    SYS_DEBUG_EFS_POST_NOTE,	//UWB测距接受信号质量信息打印
+    SYS_DEBUG_EFS_RANGING,					//测距信息打印
+    SYS_DEBUG_EFS_RSSI,				   		//UWB测距接受信号强度打印
+    SYS_DEBUG_EFS_ERR,				  	 	//UWB错误打印    
+    SYS_DEBUG_SERVER,           		//服务器交互信息打印
 	SYS_DEBUG_MQTT,             //MQTT测试
-	SYS_DEBUG_SERVER,           //服务器交互信息打印
 	SYS_DEBUG_ENHANCE,          //增强基站消息
 	SYS_DEBUG_RTK,              //RTK定位信息打印
 	SYS_DEBUG_GGA,             //NMEA GGA消息打印
 	SYS_DEBUG_RMC,             //NMEA RMC消息打印
-	SYS_DEBUG_NTRIP,            //Ntrip调试信息打印
+	SYS_DEBUG_NTRIP,            //Ntrip调试信息打印	
+    SYS_DEBUG_IMU,              //IMU位置输入与融合输出信息打印
+    SYS_DEBUG_IMU_RAW,          //IMU原始数据信息打印
+    
 	SYS_DEBUG_NUM,				//调试数量  
 }SYS_DEBUG_TYPE_Enum;
 
@@ -85,15 +92,22 @@ if(sys_debug_get_type(module))\
 #define DBG_BCODE_Print(x, ...)					    SYS_DBG_Print(SYS_DEBUG_BCODE, x, ##__VA_ARGS__)
 #define DBG_JSON_Print(x, ...)					    SYS_DBG_Print(SYS_DEBUG_JSON, x, ##__VA_ARGS__)
 #define DBG_SAT_Print(x, ...)						SYS_DBG_Print(SYS_DEBUG_SAT, x, ##__VA_ARGS__)
-#define DBG_POST_Print(x, ...)						SYS_DBG_Print(SYS_DEBUG_POST, x, ##__VA_ARGS__)
-#define DBG_POST_WARNING_Print(x, ...)		SYS_DBG_Print(SYS_DEBUG_POST_WARNING, x, ##__VA_ARGS__)
-#define DBG_MQTT_Print(x, ...)						SYS_DBG_Print(SYS_DEBUG_MQTT, x, ##__VA_ARGS__)
+#define DBG_EFS_GENERAL_Print(x, ...)				SYS_DBG_Print(SYS_DEBUG_EFS_GENERAL, x, ##__VA_ARGS__)
+#define DBG_EFS_POST_Print(x, ...)					SYS_DBG_Print(SYS_DEBUG_EFS_POST, x, ##__VA_ARGS__)
+#define DBG_EFS_RANGING_Print(x, ...)				SYS_DBG_Print(SYS_DEBUG_EFS_RANGING, x, ##__VA_ARGS__)
+#define DBG_EFS_POST_NOTE_Print(x, ...)				SYS_DBG_Print(SYS_DEBUG_EFS_POST_NOTE, x, ##__VA_ARGS__)
+#define DBG_EFS_RSSI_Print(x, ...)					SYS_DBG_Print(SYS_DEBUG_EFS_RSSI, x, ##__VA_ARGS__)
+#define DBG_EFS_ERR_Print(x, ...)					SYS_DBG_Print(SYS_DEBUG_EFS_ERR, x, ##__VA_ARGS__)
 #define DBG_SERVER_Print(x, ...)					SYS_DBG_Print(SYS_DEBUG_SERVER, x, ##__VA_ARGS__)
+#define DBG_MQTT_Print(x, ...)						SYS_DBG_Print(SYS_DEBUG_MQTT, x, ##__VA_ARGS__)
 #define DBG_ENHANCE_Print(x, ...)					SYS_DBG_Print(SYS_DEBUG_ENHANCE, x, ##__VA_ARGS__)
 #define DBG_RTK_Print(x, ...)					    SYS_DBG_Print(SYS_DEBUG_RTK, x, ##__VA_ARGS__)
 #define DBG_GGA_Print(x, ...)					    SYS_DBG_Print(SYS_DEBUG_GGA, x, ##__VA_ARGS__)
 #define DBG_RMC_Print(x, ...)					    SYS_DBG_Print(SYS_DEBUG_RMC, x, ##__VA_ARGS__)
 #define DBG_NTRIP_Print(x, ...)					    SYS_DBG_Print(SYS_DEBUG_NTRIP, x, ##__VA_ARGS__)
+#define DBG_IMU_Print(x, ...)					    SYS_DBG_Print(SYS_DEBUG_IMU, x, ##__VA_ARGS__)
+#define DBG_IMU_RAW_Print(x, ...)					SYS_DBG_Print(SYS_DEBUG_IMU_RAW, x, ##__VA_ARGS__)
+
 
 
 extern void sys_debug_init(void);

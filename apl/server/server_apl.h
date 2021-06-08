@@ -3,6 +3,12 @@
 
 #include "project_def.h"
 
+#if defined(VERSION_YANCHONG)
+	#define BASE64_LIST   "+o2G4POYvUi9tLf6wbQzrSTlZqXEjVekhCuy3aJd8mxFc1nMH7NABKpI5WRsD0/g"  //自定义表
+#else
+	#define BASE64_LIST   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"  //标准base64表
+#endif
+
 typedef struct
 {
     int cmd;

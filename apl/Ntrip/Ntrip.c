@@ -9,7 +9,7 @@
 #include "fml/gnss/NMEA.h"
 #include "fml/iotclient/iotclient.h"
 
-static U64 thread_Ntrip_stk[SIZE_4K / 8];
+static U64 thread_Ntrip_stk[SIZE_4K / 4];
 static const osThreadAttr_t thread_Ntrip_attr = {
   .stack_mem  = &thread_Ntrip_stk[0],
   .stack_size = sizeof(thread_Ntrip_stk),
@@ -225,8 +225,7 @@ static void _Ntrip_thread(void* arg)
 			tick = sysup_seconds_g;
 			Over_time_send = 0;
 			Over_time_rcv = 0;
-			
-			while(0 >= socket_TCP_send_msg(SOCKET_2,CacheBuff.RX_pData,CacheBuff.RX_Size,0))
+			while(0>= socket_TCP_send_msg(SOCKET_2,CacheBuff.RX_pData,CacheBuff.RX_Size,MSG_DONTWAIT))
 			{
 				Over_time_send++;
 				DBG_NTRIP_Print("Sending NMEA...\r\n");
@@ -244,12 +243,12 @@ static void _Ntrip_thread(void* arg)
 				
 				continue;
 			}
-		
+			
 //------------------------------------------RTCM Recv--------------------------------------------//		
 
 			while(1)
 			{
-				ret = socket_rcv_msg(SOCKET_2,NULL,0,SocketBuff.RX_pData,RX_LEN);//MSG_DONTWAIT
+				ret = socket_rcv_msg(SOCKET_2,NULL,MSG_DONTWAIT,SocketBuff.RX_pData,RX_LEN);//MSG_DONTWAIT
 				if(ret>0)
 				{
 					SocketBuff.RX_Size = ret;
@@ -276,7 +275,7 @@ static void _Ntrip_thread(void* arg)
 				}
 				Over_time_rcv++;
 				delay_ms(100);
-				if(Over_time_rcv>=20)
+				if(Over_time_rcv>=25)
 				{
 					Over_time_rcv = 0;
 					RTCM_DATA_ERROR = 1;
@@ -301,6 +300,10 @@ static void _Ntrip_thread(void* arg)
 			delay_ms(5);
 			
 		}	
+		else
+		{
+			delay_ms(10);
+		}
 
 		if(GGA_OLD_FLAG == TRUE)//1秒定时器，用于NMEA未连续接收时的旧消息发送周期定时
 		{		
@@ -318,7 +321,7 @@ static void _Ntrip_thread(void* arg)
 			socket_tcp_disconnect(SOCKET_2);
 			while(RTCM_SWITCH == MQTT_GET_RTCM)
 			{
-				delay_ms(500);
+				delay_ms(300);
 			}
 			Ntrip_State = NTRIP_INIT;
 		}
@@ -405,6 +408,7 @@ static void _Ntrip_monitor(void* arg)
 			default:
 				break;
 		}
+		//osThreadYield();
 	}
 }
 

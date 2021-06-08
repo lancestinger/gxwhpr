@@ -1,15 +1,90 @@
 #include "decadriver/deca_device_api.h"
 #include "decadriver/deca_regs.h"
-#include "platform/deca/deca_sleep.h"
-#include "platform/port/port.h"
+#include "deca_plat/deca/deca_sleep.h"
+#include "deca_plat/port/port.h"
 #include "math.h"
 //#include "usart.h"
-#include "loc.h"
+#include "alg/post/1d/alg_1d.h"
+#include "uwb_post/uwb_post.h"
 #include "log.h"
-#include "drv/platform/delay/delay.h"
+#include "delay/delay.h"
+
+#define QUEUE_BUF_MAX_SIZE	10
+
+typedef struct queue_arr
+{
+    double data[QUEUE_BUF_MAX_SIZE];
+    int front;
+    int rear;
+    int count;
+} que;
 
 
-void Filter(const double x,const double y, const double z, double *out_xyz, u32 time, u8 rest_flag)
+que g_queue;
+
+
+//初始化队列
+void init_queue()
+{	
+    que * q = &g_queue;
+    q->front = 0;
+    q->rear = 0;
+    q->count = 0;//可用于判断队空、队满
+    return;
+}
+
+
+void reset_queue(void)
+{
+		que * q = &g_queue;
+		
+	  q->front = 0;
+    q->rear = 0;
+    q->count = 0;
+		return;
+}
+
+ 
+//判断队满
+int full_queue(que * q)
+{
+    //设置队列长度为10
+    if((q->rear+1)%g_device_config.t2wall_fl_num == q->front)
+        return 0;
+    return 1;
+}
+ 
+//入队函数
+int en_queue(que * q, double data)
+{
+    if(full_queue(q) == 0)
+    {
+        q->count = g_device_config.t2wall_fl_num;
+    }
+
+    q->data[q->rear] = data;
+    q->rear = (q->rear+1)%g_device_config.t2wall_fl_num;
+		q->count++;
+    return 0;
+}
+
+
+//获取队列所有数据
+u8 get_queue_all_data(que * q, double *out_buf)
+{
+	u8 i;
+	
+	for(i=0; i<q->count; i++)
+	{
+		out_buf[i] += q->data[i];
+	}
+
+	return q->count;
+}
+
+
+
+void filter_3d(const double x,const double y, const double z, double *out_xyz, u32 time, u8 rest_flag)
 {
 	static u32 cnt = 0;
 	static u32 last_first_time = 0;
@@ -72,6 +147,93 @@ void Filter(const double x,const double y, const double z, double *out_xyz, u32 
 		out_xyz[2] = now_z;	
 	}
 }
+
+
+u8 filter_1d(const double data, double *out_data)
+{
+	u8 i;
+	double buf[QUEUE_BUF_MAX_SIZE] = {0};
+	u8 data_cnt = 0;
+	double total = 0; 
+
+	if(g_device_config.t2wall_fl_num == 0)
+	{
+		return 1;
+	}
+		
+	en_queue(&g_queue, data);
+	data_cnt = get_queue_all_data(&g_queue, buf);
+
+	for(i=0; i<data_cnt; i++)
+	{
+		total += buf[i];
+	}
+
+	*out_data = total / data_cnt;
+
+	return 0;
+	
+}
+
+
+void filter_2d(const double x,const double y, double *out_xy, u32 time, u8 rest_flag)
+{
+	static u32 cnt = 0;
+	static u32 last_first_time = 0;
+	static u32 last_second_time = 0;
+	static double last_first_x, last_first_y, last_first_z;
+	static double last_second_x, last_second_y, last_second_z;
+	double now_x, now_y, now_z;
+	double speed_x, speed_y, speed_z;
+	double ns0, ns1;
+	
+	if(rest_flag == 1)
+	{
+		cnt = 0;
+	}
+	
+	if(cnt == 0)
+	{
+		cnt++;
+		last_first_x = x;
+		last_first_y = y;
+		last_first_time = time;
+		out_xy[0] = x;
+		out_xy[1] = y;
+	}
+	else if(cnt == 1)
+	{
+		cnt++;
+		last_second_x = x;
+		last_second_y = y;
+		last_second_time = time;
+		out_xy[0] = x;
+		out_xy[1] = y;
+	}
+	else
+	{		
+		ns0 = get_count_time(last_first_time, last_second_time) / 1000000.0;
+		ns1 = get_count_time(last_second_time, time) / 1000000.0;
+		speed_x = (last_second_x - last_first_x) / ns0;
+		speed_y = (last_second_y - last_first_y) / ns0;
+		now_x = (last_second_x + speed_x * ns1)*0.5 + x*0.5;
+		now_y = (last_second_y + speed_y * ns1)*0.5 + y*0.5;
+
+		
+		last_first_x = last_second_x;
+		last_first_y = last_second_y;
+		last_second_x = now_x;
+		last_second_y = now_y;
+		last_first_time = last_second_time;
+		last_second_time = time;
+		
+		out_xy[0] = now_x;
+		out_xy[1] = now_y;
+	}
+}
+
+
+
 
 
 void Rotate2(double x1, double y1, double alpha, double* x2, double* y2)
@@ -336,6 +498,10 @@ void negative_rotate3(double x1, double y1, double z1, double x2, double y2, dou
 	
 }
 
+
+
+
+#if 0
 static double last_t2wall_dist = 6;
 
 int CalcPosition_enu(double A_r,double B_x,double B_y,double B_z,double B_r,double tag_h, u8 anchor_on_left, double *point_out)
@@ -362,7 +528,7 @@ int CalcPosition_enu(double A_r,double B_x,double B_y,double B_z,double B_r,doub
 
 	if(A_r > (Dist_12 + 20) || B_r > (Dist_12 + 20))
 	{
-		DBG_WARNING_PRINT("1.wrong distance, triangle dist: %lf, %lf, %lf m\r\n", Dist_12, A_r, B_r);
+		DBG_POST_NOTE_PRINT("1.wrong distance, triangle dist: %lf, %lf, %lf m\r\n", Dist_12, A_r, B_r);
 		return -1;
 	}	
 	
@@ -375,11 +541,11 @@ int CalcPosition_enu(double A_r,double B_x,double B_y,double B_z,double B_r,doub
 	{
 		if((Dist_12 - (A_r + B_r)) > 0.6 || (B_r - (A_r + Dist_12)) > 0.6 || (A_r - (B_r + Dist_12)) > 0.6)
 		{
-			DBG_WARNING_PRINT("2.wrong distance, triangle dist: %lf, %lf, %lf m\r\n", Dist_12, A_r, B_r);
+			DBG_POST_NOTE_PRINT("2.wrong distance, triangle dist: %lf, %lf, %lf m\r\n", Dist_12, A_r, B_r);
 			return -2;
 		}
 		
-		DBG_WARNING_PRINT("Invalid triangle,triangle dist: %lf, %lf, %lf m\r\n", Dist_12, A_r, B_r);
+		DBG_POST_NOTE_PRINT("Invalid triangle,triangle dist: %lf, %lf, %lf m\r\n", Dist_12, A_r, B_r);
 			
 		x = x0;
 		y = last_t2wall_dist; //隧道墙壁到马路中间的长度
@@ -393,8 +559,9 @@ int CalcPosition_enu(double A_r,double B_x,double B_y,double B_z,double B_r,doub
 	}
 	else
 	{
-		DBG_WARNING_PRINT("triangle dist: %lf, %lf, %lf m\r\n", Dist_12, A_r, B_r);
+		DBG_POST_NOTE_PRINT("triangle dist: %lf, %lf, %lf m\r\n", Dist_12, A_r, B_r);
 	}
+
 
 
 	//2.求x,y坐标
@@ -403,7 +570,7 @@ int CalcPosition_enu(double A_r,double B_x,double B_y,double B_z,double B_r,doub
 	tmp = pow(r1,2) - pow(x,2) - pow(z,2);
 	if(tmp < 0)
 	{
-		DBG_WARNING_PRINT("Invalid calc value: %lf\r\n", tmp);		
+		DBG_POST_NOTE_PRINT("Invalid calc value: %lf\r\n", tmp);		
 		x = x0;
 		y = last_t2wall_dist; //隧道墙壁到马路中间的长度
 		if(anchor_on_left == 1)
@@ -421,7 +588,7 @@ int CalcPosition_enu(double A_r,double B_x,double B_y,double B_z,double B_r,doub
 	y = y*0.5 + last_t2wall_dist*0.5;
 	if(y > g_device_config.t2wall_threshold) //如果离隧道墙壁距离超过阈值
 	{
-		DBG_WARNING_PRINT("3.wrong distance，t2wall is too big\r\n");
+		DBG_POST_NOTE_PRINT("3.wrong distance，t2wall is too big\r\n");
 		return -3;
 	}
 	t2wall_dist = y;
@@ -441,7 +608,132 @@ end:
 
 	if(isnan(x) || isnan(y) || isnan(z))
 	{
-		DBG_WARNING_PRINT("Invalid calc value\r\n");
+		DBG_POST_NOTE_PRINT("Invalid calc value\r\n");
+		return -4;
+	}
+
+	//实际坐标
+	point_out[0] = x;
+	point_out[1] = y;
+	point_out[2] = z;
+	point_out[3] = t2main_dist;
+	point_out[4] = t2wall_dist;
+
+	return 0;
+
+}
+
+#endif
+
+
+int CalcPosition_enu(double A_r,double B_x,double B_y,double B_z,double B_r,double tag_h, u8 anchor_on_left, double *point_out)
+{
+	double Dist_12;
+	double x, y, z, x0, y0, x1, y1, x2, y2 , r1, r2;
+	double sin, cos;
+	double tmp;
+	double tmp_x,tmp_y,tmp_z;
+	double t2wall_dist; //接受机到隧道墙壁的距离
+	double t2main_dist; //接受机到主基站的距离
+	static double last_t2wall_dist = 6; //上一次接受机到隧道墙壁的距离
+	double out_xy[2];
+
+
+	z = tag_h;
+
+	/* 0.以两基站的连线为横坐标轴，A基站作为原点 */	
+	Dist_12 = sqrt(pow(B_x,2) + pow(B_y,2) + pow(B_z,2));
+	
+	x1 = 0;
+	y1 = 0;
+	r1 = A_r;
+	x2 = Dist_12;
+	y2 = 0;	
+	r2 = B_r;	
+
+	if(A_r > (Dist_12 + 20) || B_r > (Dist_12 + 20))
+	{
+		DBG_POST_NOTE_PRINT("1.wrong distance, triangle dist: %lf, %lf, %lf m\r\n", Dist_12, A_r, B_r);
+		return -1;
+	}	
+	
+	//1.求在x轴上的映射x0
+	y0 = 0;
+	x0 = (pow(x2,2) - pow(r2,2) + pow(r1,2) ) / (2 * x2);
+
+	if((A_r + B_r) <= Dist_12 || (A_r + Dist_12) <= B_r || (B_r + Dist_12) <= A_r) 
+	{
+		if((Dist_12 - (A_r + B_r)) > 0.6 || (B_r - (A_r + Dist_12)) > 0.6 || (A_r - (B_r + Dist_12)) > 0.6)
+		{
+			DBG_POST_NOTE_PRINT("2.wrong distance, triangle dist: %lf, %lf, %lf m\r\n", Dist_12, A_r, B_r);
+			return -2;
+		}
+		else
+		{		
+			DBG_POST_NOTE_PRINT("Invalid triangle,triangle dist: %lf, %lf, %lf m\r\n", Dist_12, A_r, B_r);			
+			x = x0;
+			y = last_t2wall_dist;
+			goto end;
+		}
+	}
+	else
+	{
+		DBG_POST_NOTE_PRINT("triangle dist: %lf, %lf, %lf m\r\n", Dist_12, A_r, B_r);
+	}
+
+
+
+	//2.求x,y坐标
+	x = x0;
+	tmp = pow(r1,2) - pow(x,2) - pow(z,2);
+	if(tmp < 0)
+	{
+		DBG_POST_NOTE_PRINT("Invalid calc value: %lf\r\n", tmp);		
+		y = last_t2wall_dist; 
+	}
+	else
+	{			
+		y = sqrt(tmp);
+		if(y > g_device_config.t2wall_threshold) //如果离隧道墙壁距离超过阈值
+		{
+			DBG_POST_NOTE_PRINT("3.wrong distance，t2wall is too big\r\n");
+			return -3;
+		}
+		if(anchor_on_left == 1)
+		{
+			y = 0 - y;
+		}
+	}
+	
+
+end:
+	if(g_open_filter_flag == 1)
+	{
+		double out_data;
+		filter_2d(x, y, out_xy, get_cur_time(), g_reset_filter);		
+		g_reset_filter = 0;
+		x = out_xy[0];
+		y = out_xy[1];
+		if(filter_1d(y, &out_data) == 0)
+		{
+			y = out_data;
+		}	
+	}
+
+	t2main_dist = x;
+	t2wall_dist = y;
+	last_t2wall_dist = t2wall_dist;
+
+
+	//3.计算基于东北天enu的坐标
+	negative_rotate3(B_x,B_y,B_z,x, y, z,&tmp_x, &tmp_y, &tmp_z);
+	x = tmp_x;
+	y = tmp_y;
+	z = tmp_z;
+
+	if(isnan(x) || isnan(y) || isnan(z))
+	{
+		DBG_POST_NOTE_PRINT("Invalid calc value\r\n");
 		return -4;
 	}
 

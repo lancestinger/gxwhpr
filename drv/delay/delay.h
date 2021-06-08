@@ -2,8 +2,8 @@
 #define __DELAY_H 			   
 #include "decadriver/deca_device_api.h"
 #include "decadriver/deca_regs.h"
-#include "platform/deca/deca_sleep.h"
-#include "platform/port/port.h"
+#include "deca_plat/deca/deca_sleep.h"
+#include "deca_plat/port/port.h"
 
 
 void delay_init(u8 SYSCLK);

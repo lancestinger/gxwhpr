@@ -22,7 +22,7 @@
 #include "project_def.h"
 #include "apl/imu/Imu.h"
 #include "fml/gnss/nmea.h"
-#include "meas/meas_distance.h"
+#include "uwb_post/uwb_post.h"
 /*------------------------------头文件------------------------------*/
 
 
@@ -204,6 +204,16 @@ static const gpio_drv_t gpio_drv_cfg[GPIO_NUM] =
         NonMaskableInt_IRQn,
         0,0,
     },
+    //GPIO18 PD0,LED//
+    {
+        GPIOD,
+        GPIO_PIN_0,
+        GPIO_MODE_OUTPUT_PP,
+
+        FALSE,
+        NonMaskableInt_IRQn,
+        0,0,
+    },
 
 	
 };
@@ -355,6 +365,8 @@ void gpio_drv_init(void)
 	delay_ms(5);
 	gpio_drv_set(GPIO_17, LEVEL_LOW);//LED15 OPEN
 	delay_ms(5);
+	gpio_drv_set(GPIO_18, LEVEL_LOW);//LED15 OPEN
+	delay_ms(5);
 	//gpio_drv_set(GPIO_ISM330_INT1, LEVEL_LOW);
 	NOTE_PRINT(("GPIO初始化完成!!!!!!\r\n"));
 }
@@ -442,7 +454,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     switch(GPIO_Pin)
     {
     	case GPIO_PIN_0:
-			 UBX_1PPS_time = osKernelGetTickCount();
+			 //UBX_1PPS_time = osKernelGetTickCount();
 			 break;
 		case GPIO_PIN_5:
 			 osEventFlagsSet(evt_id, DM1000_TXRX_FLAG);

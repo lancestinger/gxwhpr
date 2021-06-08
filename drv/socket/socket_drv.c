@@ -65,6 +65,7 @@ static socket_drv_t socket_drv_cfg[SOCKET_NUM] =
 };
 /*------------------------------文件变量------------------------------*/
 
+int Net_lock = 0;//网络收发互斥锁
 
 /*------------------------------函数声明------------------------------*/
 
@@ -130,14 +131,9 @@ S32 socket_UDP_send_msg(socket_type_enum type, IN SOCKADDR_IN* dst_socket, U8* b
 	}
 }
 
-void udp_set_dst(SOCKADDR_IN* udp_dst)
+void udp_send_ms(char* out, size_t len_out)
 {
-	udp_dst->sin_family = PF_INET;
-	udp_dst->sin_addr.s_b1 = main_handle_g.cfg.net.MS_ip[0];
-	udp_dst->sin_addr.s_b2 = main_handle_g.cfg.net.MS_ip[1];
-	udp_dst->sin_addr.s_b3 = main_handle_g.cfg.net.MS_ip[2];
-	udp_dst->sin_addr.s_b4 = main_handle_g.cfg.net.MS_ip[3];
-	udp_dst->sin_port = htons(main_handle_g.cfg.net.MS_port);
+	socket_UDP_send_msg(SOCKET_MS,socket_drv_cfg[SOCKET_MS].p_socket_handle,(U8*)out,len_out);
 }
 
 
@@ -289,8 +285,8 @@ S32 socket_tcp_connect(socket_type_enum type)
 			DBG_Socket_Print("socket(tcp-%u)连接[IP:%u.%u.%u.%u][port:%u]失败!\r\n", socket_drv_cfg[type].local_port,tcp_addr_port[0],tcp_addr_port[1],tcp_addr_port[2],tcp_addr_port[3],htons(socket_drv_cfg[type].local_port));
 			return 1;
 		}
-		setsockopt(socket_drv_cfg[type].socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&time_out, sizeof (time_out));
-		setsockopt(socket_drv_cfg[type].socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&time_out, sizeof (time_out));
+		//setsockopt(socket_drv_cfg[type].socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&time_out, sizeof (time_out));
+		//setsockopt(socket_drv_cfg[type].socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&time_out, sizeof (time_out));
 
 		DBG_Socket_Print("socket(tcp-%u)连接[IP:%u.%u.%u.%u][port:%u]成功!!!!!!\r\n", socket_drv_cfg[type].local_port,tcp_addr_port[0],tcp_addr_port[1],tcp_addr_port[2],tcp_addr_port[3],htons(socket_drv_cfg[type].local_port));
 	}
@@ -362,6 +358,10 @@ void socket_udp_drv_init(socket_type_enum type)
 		socket_drv_cfg[type].p_socket_handle->sin_family = AF_INET;
 		if(type==SOCKET_MS)
 		{
+			socket_drv_cfg[type].p_socket_handle->sin_addr.s_b1 = main_handle_g.cfg.net.MS_ip[0];
+			socket_drv_cfg[type].p_socket_handle->sin_addr.s_b2 = main_handle_g.cfg.net.MS_ip[1];
+			socket_drv_cfg[type].p_socket_handle->sin_addr.s_b3 = main_handle_g.cfg.net.MS_ip[2];
+			socket_drv_cfg[type].p_socket_handle->sin_addr.s_b4 = main_handle_g.cfg.net.MS_ip[3];
 			socket_drv_cfg[type].p_socket_handle->sin_port = htons(main_handle_g.cfg.net.MS_port);
 			UDPBuff.RX_flag = FALSE;
 		}
@@ -369,13 +369,10 @@ void socket_udp_drv_init(socket_type_enum type)
 		{   //后续可添加其他socket
 			socket_drv_cfg[type].p_socket_handle->sin_port = htons(socket_drv_cfg[type].local_port);
 		}
+		/*
 		socket_drv_cfg[type].p_socket_handle->sin_addr.s_addr = INADDR_ANY;
-/*			
-		socket_drv_cfg[i].p_socket_handle->sin_addr.s_b1 = 192;
-		socket_drv_cfg[i].p_socket_handle->sin_addr.s_b2 = 168;
-		socket_drv_cfg[i].p_socket_handle->sin_addr.s_b3 = 10;
-		socket_drv_cfg[i].p_socket_handle->sin_addr.s_b4 = 235;
-*/			
+		*/
+				
 		if (bind(socket_drv_cfg[type].socket_fd, (SOCKADDR *)(socket_drv_cfg[type].p_socket_handle), sizeof(SOCKADDR)) < 0)
 		{
 			ERR_PRINT(("########################socket(udp-%u)绑定失败!\r\n", socket_drv_cfg[type].local_port));

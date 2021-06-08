@@ -18,8 +18,11 @@ void insNaviUpdate(int8 locTime, imu_rawdata_t acce[], int n1, imu_rawdata_t mag
 
 void insNaviFusion(int8 locTime, const ins_geopos_t* pPos, const ins_vel_t* pVel, const float* pHeading);
 
+void CalibVelDir();
+
 void ins_getFusionRslt(ins_geopos_t* pPos, ins_vel_t* pVel, ins_atti_t* pAtti);
 
+void ins_getMagAttitude(ins_atti_t* pAtti);
 
 #ifdef __cplusplus
 }

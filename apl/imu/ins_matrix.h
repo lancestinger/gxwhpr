@@ -9,23 +9,6 @@ extern "C" {
 
 #include "ins_baseparams.h"
 
-#ifndef  GLOBAL_FREE
-#define	GLOBAL_FREE(x) free(x)
-#endif
-
-#ifndef  GLOBAL_MALLOC
-#define	GLOBAL_MALLOC(x) malloc(x)
-#endif
-
-#ifndef  GLOBAL_CALLOC
-#define	GLOBAL_CALLOC(count, sizeof) calloc(count, sizeof)
-#endif
-
-#ifndef  GLOBAL_MEMCPY
-#define	GLOBAL_MEMCPY(des,src,sizeof) memcpy(des,src,sizeof)
-#endif
-
-
 	/* new matrix ------------------------------------------------------------------
 	* allocate memory of matrix 
 	* args   : int    n,m       I   number of rows and columns of matrix

@@ -23,9 +23,11 @@ extern "C" {
 //#include "stm32f40x.h"
 #include "decadriver/deca_device_api.h"
 #include "decadriver/deca_regs.h"
-#include "platform/deca/deca_sleep.h"
-#include "meas/meas_distance.h"
+#include "deca_plat/deca/deca_sleep.h"
 #include "pubDef.h"
+#include "alg/post/1d/alg_1d.h"
+
+
 
 /* Define our wanted value of CLOCKS_PER_SEC so that we have a millisecond
  * tick timer. */

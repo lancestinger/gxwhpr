@@ -285,6 +285,7 @@ static void _update_thread(void* arg)
             break;
         }
         delay_ms(1000);
+		//osThreadYield();
 		//GLOBAL_PRINT(("updateSta: %d\r\n",update_handle_g.updateSta));
 	}
 }

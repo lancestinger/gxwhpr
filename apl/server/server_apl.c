@@ -1,7 +1,7 @@
 #include "server_apl.h"
 #include "json/cJSON.h"
 #include "iotclient/iotclient.h"
-#include "meas/meas_distance.h"
+#include "uwb_post/uwb_post.h"
 #include "fml/gnss/nmea.h"
 #include "drv/log.h"
 #include "drv/socket/socket_drv.h"
@@ -40,8 +40,9 @@ static ENU ENU_pos;
 
 
 // 全局常量定义
-const char * base64char = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-const char padding_char = '=';
+//const char * base64char = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";//标准base64表
+const char * base64char = BASE64_LIST;
+
 /*
 U8 UDP_DST[5]={
 						192,
@@ -79,6 +80,7 @@ static int print_preallocated(IOT_Device_t* iotDev, cJSON *root)
     /* declarations */
     char *out = NULL;
     char *buf = NULL;
+	char *base64_buf = NULL;
     size_t len = 0;
 
     /* formatted print */
@@ -110,8 +112,19 @@ static int print_preallocated(IOT_Device_t* iotDev, cJSON *root)
     }
 
     DBG_MQTT_Print("json str:%s\r\n",buf);
+	base64_buf = (char*)malloc(len*2);
+	if (base64_buf == NULL)
+    {
+        GLOBAL_PRINT(("Allocate base64_buf failed.\n"));
+    }
+	else
+	{
+		//len = base64_encode(buf,base64_buf,len-5);
+	}
+	//iotclient_publish(iotDev, base64_buf, len);
     iotclient_publish(iotDev, buf, len-5);
-    
+
+	free(base64_buf);
     free(out);
     free(buf);
     return 0;
@@ -161,7 +174,9 @@ U8 upload_hpr_state_to_server(void)
 	cJSON_AddNumberToObject(data_obj, "latitude", server_Data.latitude);
 	cJSON_AddNumberToObject(data_obj, "longitude", server_Data.longitude);
 	cJSON_AddNumberToObject(data_obj, "altitude", server_Data.height);
-	cJSON_AddNumberToObject(data_obj, "mode", server_Data.mode);	
+	cJSON_AddNumberToObject(data_obj, "mode", server_Data.mode);
+	cJSON_AddNumberToObject(data_obj, "fpRxRssiDiffThr", g_device_config.sig_qa_thr);
+	cJSON_AddNumberToObject(data_obj, "rssi", g_uwb_rg_ssi);
 	
 	if(cnt_num%10 == 0)
 	{
@@ -170,8 +185,8 @@ U8 upload_hpr_state_to_server(void)
 		cJSON_AddNumberToObject(data_obj, "tagH", g_device_config.tag_h);
 		cJSON_AddNumberToObject(data_obj, "txPower", calc_tx_power_config_value_to_db(g_device_config.tx_power));
 		cJSON_AddNumberToObject(data_obj, "id", TAG_ID_SUM);
-		cJSON_AddNumberToObject(data_obj, "iTranAntDelay", g_device_config.ant_tx_delay);  
-		cJSON_AddNumberToObject(data_obj, "iRecvAntDelay", g_device_config.ant_rx_delay);
+		cJSON_AddNumberToObject(data_obj, "iTranAntDelay", g_device_config.ant_delay);  
+		cJSON_AddNumberToObject(data_obj, "iRecvAntDelay", g_device_config.ant_delay);
 		cJSON_AddStringToObject(data_obj, "ms_id",(char*)UDPBuff.RX_pData);
 	}
 	
@@ -423,8 +438,8 @@ static U8 upload_hpr_all_para_to_server(void)
 	cJSON_AddNumberToObject(data_obj, "lon", g_device_config.position[1]);  
     cJSON_AddNumberToObject(data_obj, "alt", g_device_config.position[2]);
 	cJSON_AddNumberToObject(data_obj, "device_type", g_device_config.device_type);
-	cJSON_AddNumberToObject(data_obj, "iTranAntDelay", g_device_config.ant_tx_delay);  
-    cJSON_AddNumberToObject(data_obj, "iRecvAntDelay", g_device_config.ant_rx_delay);		 
+	cJSON_AddNumberToObject(data_obj, "iTranAntDelay", g_device_config.ant_delay);  
+    cJSON_AddNumberToObject(data_obj, "iRecvAntDelay", g_device_config.ant_delay);		 
     //cJSON_AddNumberToObject(data_obj, "txPower", g_device_config.tx_power);
 	cJSON_AddNumberToObject(data_obj, "txPower", calc_tx_power_config_value_to_db(g_device_config.tx_power));
 	cJSON_AddNumberToObject(data_obj, "chan", g_device_config.chan);
@@ -591,12 +606,14 @@ U8 parse_server_data(U8* buf, int len)
                 }
                 else if(!strcmp(item_obj->string,"iTranAntDelay"))
                 {
-					g_device_config.ant_tx_delay = item_obj->valueint;
+					g_device_config.ant_delay = item_obj->valueint;
+					dwt_settxantennadelay(g_device_config.ant_delay);
 					save_device_para();
                 }
 				else if(!strcmp(item_obj->string,"iRecvAntDelay"))
                 {
-					g_device_config.ant_rx_delay = item_obj->valueint;
+					g_device_config.ant_delay = item_obj->valueint;
+					dwt_setrxantennadelay(g_device_config.ant_delay);
 					save_device_para();
                 }
 									
@@ -604,8 +621,7 @@ U8 parse_server_data(U8* buf, int len)
 				//DBG_MQTT_Print("item_obj = %s\r\n",item_obj->string);
             }
 			
-			GLOBAL_INTVAL(g_device_config.ant_tx_delay);
-			GLOBAL_INTVAL(g_device_config.ant_rx_delay);
+			GLOBAL_INTVAL(g_device_config.ant_delay);
 			GLOBAL_FLTVAL(g_device_config.tag_h);
 			GLOBAL_HEX(g_device_config.tx_power);
 			
@@ -655,7 +671,7 @@ U8 Cmd_parse_data(U8* buf, int len)
 	cmd_obj = cJSON_GetObjectItem(receive_obj,"cmd");
 	if(cmd_obj)
 	{			
-		DBG_SERVER_Print("cmd: %s\r\n", cmd_obj->valuestring);
+		DBG_MQTT_Print("cmd: %s\r\n", cmd_obj->valuestring);
 		sshell_excute_cmd(cmd_obj->valuestring);
 		cJSON_Delete(receive_obj);
 		return TRUE;
@@ -695,8 +711,8 @@ static int UDP_preallocated(cJSON *root)
     size_t len = 0;
 	size_t len_out = 0;
 
-	SOCKADDR_IN* UDP_dst = (SOCKADDR_IN*)GLOBAL_MALLOC(sizeof(SOCKADDR_IN));
-	GLOBAL_MEMSET(UDP_dst,0x0,sizeof(SOCKADDR_IN));
+	//SOCKADDR_IN* UDP_dst = (SOCKADDR_IN*)GLOBAL_MALLOC(sizeof(SOCKADDR_IN));
+	//GLOBAL_MEMSET(UDP_dst,0x0,sizeof(SOCKADDR_IN));
 
     /* formatted print */
     out = cJSON_PrintUnformatted(root);//cJSON_Print
@@ -721,7 +737,7 @@ static int UDP_preallocated(cJSON *root)
             WARN_PRINT(("cJSON_Print result:\n%s\n", out));
             WARN_PRINT(("cJSON_PrintPreallocated result:\n%s\n", buf));
         }
-		free(UDP_dst);
+		//free(UDP_dst);
         free(out);
         free(buf);
         return -1;
@@ -729,18 +745,9 @@ static int UDP_preallocated(cJSON *root)
     //GLOBAL_PRINT(("json str:%s\r\n",buf));
 	DBG_Socket_Print("UDP SENT = %s\r\n",out);
 
-	udp_set_dst(UDP_dst);
-	/*
-	UDP_dst->sin_family = PF_INET;
-	UDP_dst->sin_addr.s_b1 = main_handle_g.cfg.net.MS_ip[0];
-	UDP_dst->sin_addr.s_b2 = main_handle_g.cfg.net.MS_ip[1];
-	UDP_dst->sin_addr.s_b3 = main_handle_g.cfg.net.MS_ip[2];
-	UDP_dst->sin_addr.s_b4 = main_handle_g.cfg.net.MS_ip[3];
-	UDP_dst->sin_port = htons(main_handle_g.cfg.net.MS_port);
-	*/
-    socket_UDP_send_msg(SOCKET_MS,UDP_dst,(U8*)out,len_out);
+    udp_send_ms(out,len_out);
 
-	free(UDP_dst);
+	//free(UDP_dst);
     free(out);
     free(buf);
     return 0;
@@ -765,32 +772,33 @@ static int UDP_preallocated(cJSON *root)
 *****************************************************************************/
 U8 UDP_upload_hpr_location(void)
 {
-	cJSON *root = NULL;
-	char Str[20]={0};
+	cJSON *root_udp = NULL;
+	static char Str[20]={0};
 
 	if(g_device_config.device_type != TAG)
 		return TRUE;
-
-    root = cJSON_CreateObject();
 	
-	cJSON_AddStringToObject(root, "title","position");
-    cJSON_AddStringToObject(root, "date",Sys_Date);
-	cJSON_AddStringToObject(root, "utc",Sys_UTC);
+	GLOBAL_MEMSET(Str,0x0,20);
+    root_udp = cJSON_CreateObject();
+	
+	cJSON_AddStringToObject(root_udp, "title","position");
+    cJSON_AddStringToObject(root_udp, "date",Sys_Date);
+	cJSON_AddStringToObject(root_udp, "utc",Sys_UTC);
 	sprintf(Str,"%.8f",server_Data.latitude);
-	cJSON_AddStringToObject(root, "lat",(char*)Str);
+	cJSON_AddStringToObject(root_udp, "lat",(char*)Str);
 	sprintf(Str,"%.8f",server_Data.longitude);
-	cJSON_AddStringToObject(root, "lon",(char*)Str);
+	cJSON_AddStringToObject(root_udp, "lon",(char*)Str);
 	sprintf(Str,"%.3f",server_Data.height);
-	cJSON_AddStringToObject(root, "alt",(char*)Str);
-	cJSON_AddNumberToObject(root, "mode",server_Data.mode);
-	                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
+	cJSON_AddStringToObject(root_udp, "alt",(char*)Str);
+	cJSON_AddNumberToObject(root_udp, "mode",server_Data.mode);
+	                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
     /* Print to text */
-    if(UDP_preallocated(root) != 0)
+    if(UDP_preallocated(root_udp) != 0)
     {
-        cJSON_Delete(root);
+        cJSON_Delete(root_udp);
         return FALSE;
     }
-    cJSON_Delete(root);
+    cJSON_Delete(root_udp);
 
     return TRUE;
 
@@ -1036,7 +1044,7 @@ static void _Server_thread(void * arg)
 		if(loop_cnt>32700)
 			loop_cnt = 0;
 		
-		if(SERVER_RTK==POS_VALID && GGA_DATA_READY>=1)//RTK定位有效
+		if(SERVER_RTK==POS_VALID && NMEA_Data_ptr.GGA_DATA_READY==TRUE)//RTK定位有效
 		{
 			//取RTK定位数值与时间
 			Pos_time.RTK_TIME = osKernelGetTickCount();
@@ -1049,11 +1057,10 @@ static void _Server_thread(void * arg)
 		if(g_pos_info.tag_position_valid_flag == POS_VALID)//UWB定位有效
 		{
 			CNT_num++;
-			//取UWB定位数值与时间
-			Pos_time.UWB_TIME = osKernelGetTickCount();		
-			DBG_ENHANCE_Print("\r\nHPR_OUTPUT[UWB],%d,%d,%lf,%lf,%lf,%d,%lf,%d,%lf,%lf,%lf,%lf,%lf,[VALID],%d\r\n\r\n",\
+			//取UWB定位数值与时间		
+			DBG_ENHANCE_Print("\r\nHPR_OUTPUT[UWB],%d,%d,%lf,%lf,%lf,%d,%lf,%d,%lf,%lf,%lf,%lf,%lf,%lf,[VALID],%d\r\n\r\n",\
 							CNT_num,\
-							Pos_time.UWB_TIME,\
+							g_pos_info.pos_Time,\
 							g_pos_info.tag_position[0],g_pos_info.tag_position[1],g_pos_info.tag_position[2],\
 							g_pos_info.main_anchor_id,\
 							g_pos_info.D0,\
@@ -1062,7 +1069,8 @@ static void _Server_thread(void * arg)
 							g_pos_info.t2ref_dist,\
 							g_pos_info.t2wall_dist,\
 							g_pos_info.t2main_dist,\
-							g_pos_info.rssi,\
+							g_pos_info.main_rssi,\
+							g_pos_info.sub_rssi,\
 							g_pos_info.tag_position_valid_flag);
 			
 			g_pos_info.tag_position_valid_flag = POS_VALUE_VALID;
@@ -1077,7 +1085,7 @@ static void _Server_thread(void * arg)
 				server_Data.longitude = NMEA_Data_ptr.lon;
 				server_Data.height    = NMEA_Data_ptr.alt;
 				server_Data.mode = NMEA_Data_ptr.RTK_mode;
-				GGA_DATA_READY = 0;
+				NMEA_Data_ptr.GGA_DATA_READY = FALSE;
 				SERVER_RTK = POS_VALUE_INVALID;
 			}
 			else if(g_pos_info.tag_position_valid_flag==POS_VALUE_VALID && NMEA_Data_ptr.RTK_mode != 4)//RTK无效且UWB数据有效
@@ -1107,7 +1115,7 @@ static void _Server_thread(void * arg)
 				server_Data.longitude = NMEA_Data_ptr.lon;
 				server_Data.height    = NMEA_Data_ptr.alt;
 				server_Data.mode = NMEA_Data_ptr.RTK_mode;
-				GGA_DATA_READY = 0;
+				NMEA_Data_ptr.GGA_DATA_READY = TRUE;
 				SERVER_RTK = POS_VALUE_INVALID;
 			}
 		}

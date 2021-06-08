@@ -22,7 +22,7 @@ double *ins_mat(int n, int m)
 	double *p;
 
 	if (n<=0||m<=0) return NULL;
-	if (!(p=(double *)GLOBAL_MALLOC(sizeof(double)*n*m))) {
+	if (!(p=(double *)malloc(sizeof(double)*n*m))) {
 		ins_fatalerr("matrix memory allocation error: n=%d,m=%d\n",n,m);
 	}
 	return p;
@@ -38,7 +38,7 @@ int *ins_imat(int n, int m)
 	int *p;
 
 	if (n<=0||m<=0) return NULL;
-	if (!(p=(int *)GLOBAL_MALLOC(sizeof(int)*n*m))) {
+	if (!(p=(int *)malloc(sizeof(int)*n*m))) {
 		ins_fatalerr("integer matrix memory allocation error: n=%d,m=%d\n",n,m);
 	}
 	return p;
@@ -57,7 +57,7 @@ double *ins_zeros(int n, int m)
 	if ((p=ins_mat(n,m))) for (n=n*m-1;n>=0;n--) p[n]=0.0;
 #else
 	if (n<=0||m<=0) return NULL;
-	if (!(p=(double *)GLOBAL_CALLOC(sizeof(double),n*m))) {
+	if (!(p=(double *)calloc(sizeof(double),n*m))) {
 		ins_fatalerr("matrix memory allocation error: n=%d,m=%d\n",n,m);
 	}
 #endif
@@ -141,7 +141,7 @@ int ins_mat_normv3(const double *a, double *b)
 *-----------------------------------------------------------------------------*/
 void ins_matcpy(double *A, const double *B, int n, int m)
 {
-	GLOBAL_MEMCPY(A,B,sizeof(double)*n*m);
+	memcpy(A,B,sizeof(double)*n*m);
 }
 
 
@@ -185,13 +185,13 @@ int ins_matinv(double *A, int n)
 	int i,j,*indx;
 
 	indx=ins_imat(n,1); B=ins_mat(n,n); ins_matcpy(B,A,n,n);
-	if (ludcmp(B,n,indx,&d)) {GLOBAL_FREE(indx); GLOBAL_FREE(B); return -1;}
+	if (ludcmp(B,n,indx,&d)) {free(indx); free(B); return -1;}
 	for (j=0;j<n;j++) {
 		for (i=0;i<n;i++) A[i+j*n]=0.0;
 		A[j+j*n]=1.0;
 		lubksb(B,n,indx,A+j*n);
 	}
-	GLOBAL_FREE(indx); GLOBAL_FREE(B);
+	free(indx); free(B);
 	return 0;
 }
 
@@ -214,7 +214,7 @@ int ins_matsolve(const char *tr, const double *A, const double *Y, int n,
 
 	ins_matcpy(B,A,n,n);
 	if (!(info=ins_matinv(B,n))) ins_matmul(tr[0]=='N'?"NN":"TN",n,m,n,1.0,B,Y,0.0,X);
-	GLOBAL_FREE(B);
+	free(B);
 	return info;
 }
 
@@ -240,7 +240,7 @@ int ins_mat_lsq(const double *A, const double *y, int n, int m, double *x,
 	ins_matmul("NN",n,1,m,1.0,A,y,0.0,Ay); /* Ay=A*y */
 	ins_matmul("NT",n,n,m,1.0,A,A,0.0,Q);  /* Q=A*A' */
 	if (!(info=ins_matinv(Q,n))) ins_matmul("NN",n,1,n,1.0,Q,Ay,0.0,x); /* x=Q^-1*Ay */
-	GLOBAL_FREE(Ay);
+	free(Ay);
 	return info;
 }
 /* kalman filter ---------------------------------------------------------------
@@ -277,7 +277,7 @@ int ins_mat_filter_(const double *x, const double *P, const double *H,
 		ins_matmul("NT",n,n,m,-1.0,K,H,1.0,I);  /* Pp=(I-K*H')*P */
 		ins_matmul("NN",n,n,n,1.0,I,P,0.0,Pp);
 	}
-	GLOBAL_FREE(F); GLOBAL_FREE(Q); GLOBAL_FREE(K); GLOBAL_FREE(I);
+	free(F); free(Q); free(K); free(I);
 	return info;
 }
 
@@ -299,12 +299,7 @@ int ins_mat_filter(double *x, double *P, const double *H, const double *v,
 		x[ix[i]]=xp_[i];
 		for (j=0;j<k;j++) P[ix[i]+ix[j]*n]=Pp_[i+j*k];
 	}
-	GLOBAL_FREE(ix); 
-	GLOBAL_FREE(x_); 
-	GLOBAL_FREE(xp_); 
-	GLOBAL_FREE(P_); 
-	GLOBAL_FREE(Pp_); 
-	GLOBAL_FREE(H_);
+	free(ix); free(x_); free(xp_); free(P_); free(Pp_); free(H_);
 	return info;
 }
 
@@ -340,7 +335,7 @@ int ins_mat_smoother(const double *xf, const double *Qf, const double *xb,
 			ins_matmul("NN",n,1,n,1.0,Qs,xx,0.0,xs);
 		}
 	}
-	GLOBAL_FREE(invQf); GLOBAL_FREE(invQb); GLOBAL_FREE(xx);
+	free(invQf); free(invQb); free(xx);
 	return info;
 }
 
@@ -354,7 +349,7 @@ static int ludcmp(double *A, int n, int *indx, double *d)
 	*d=1.0;
 	for (i=0;i<n;i++) {
 		big=0.0; for (j=0;j<n;j++) if ((tmp=fabs(A[i+j*n]))>big) big=tmp;
-		if (big>0.0) vv[i]=1.0/big; else {GLOBAL_FREE(vv); return -1;}
+		if (big>0.0) vv[i]=1.0/big; else {free(vv); return -1;}
 	}
 	for (j=0;j<n;j++) {
 		for (i=0;i<j;i++) {
@@ -372,12 +367,12 @@ static int ludcmp(double *A, int n, int *indx, double *d)
 			*d=-(*d); vv[imax]=vv[j];
 		}
 		indx[j]=imax;
-		if (A[j+j*n]==0.0) {GLOBAL_FREE(vv); return -1;}
+		if (A[j+j*n]==0.0) {free(vv); return -1;}
 		if (j!=n-1) {
 			tmp=1.0/A[j+j*n]; for (i=j+1;i<n;i++) A[i+j*n]*=tmp;
 		}
 	}
-	GLOBAL_FREE(vv);
+	free(vv);
 	return 0;
 }
 
@@ -501,13 +496,15 @@ double ins_getMatItem_ColMjr(double* A, int n, int m, int i, int j)
 /* fatal error ---------------------------------------------------------------*/
 static void ins_fatalerr(const char *format, ...)
 {
+	/*
 	char msg[1024];
 	va_list ap;
 	va_start(ap,format); vsprintf(msg,format,ap); va_end(ap);
 	//if (fatalfunc) fatalfunc(msg);
 	//else fprintf(stderr,"%s",msg);
+	*/
 
-	fprintf(stderr,"%s",msg);
+	//fprintf(stderr,"%s",msg);
 
 	exit(-9);
 }

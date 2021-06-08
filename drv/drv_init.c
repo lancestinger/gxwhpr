@@ -24,7 +24,7 @@
 #include "adc/adc_drv.h"
 #include "spi/spi_drv.h"
 #include "socket/socket_drv.h"
-#include "meas/meas_distance.h"
+#include "uwb_post/uwb_post.h"
 
 #include "gpio/gpio_drv.h"
 #include "project_def.h"

@@ -10,16 +10,13 @@
  *
  * @author DecaWave
  */
-#include "drv/meas/meas_distance.h"
-#include "platform/deca/deca_sleep.h"
+
+#include "deca_plat/deca/deca_sleep.h"
+#include "uwb_post/uwb_post.h"
 //#include "lcd.h"
 //#include "usart.h"
 #include "port.h"
 #include <string.h>
-#include "platform/flash/stmflash.h"
-//#include "timer.h"
-//#include "oled.h"
-//#include "dma.h"
 #include "pubDef.h"
 #include "spi/spi_drv.h"
 #include "stm32h743xx.h"
@@ -38,7 +35,7 @@
 #define touch_screen_init(x)		No_Configuration(x)
 
 
-int16_t lB_ld[1792];      //低通滤波缓存区
+//int16_t lB_ld[1792];      //低通滤波缓存区
 
 /* System tick 32 bit variable defined by the platform */
 // extern __IO unsigned long time32_incr;
@@ -676,6 +673,8 @@ void peripherals_init (void)
 //	TIM4_Int_Init(1,3599);  //记录时间戳定时器-测试用
 }
 
+
+#if 0
 /******************************************************************************
 												    卡尔曼滤波
 *******************************************************************************/
@@ -710,6 +709,8 @@ double KalmanFilter(const double ResrcData,double ProcessNiose_Q,double MeasureN
     return x_now;
 
 }
+
+#endif
 /******************************************************************************
 												    从数据包获取时间戳
 *******************************************************************************/
@@ -745,6 +746,7 @@ void final_msg_get_dist(const uint8 *ts_field, uint32 *dist)
 #endif
 }
 
+# if 0
 
 /******************************************************************************
 												    低通滤波算法
@@ -756,6 +758,8 @@ int data;
 	lB_ld[channel]=data;
 	return data;
 }
+
+#endif
 
 uint16_t Checksum_u16(uint8_t* pdata, uint32_t len) 
 {

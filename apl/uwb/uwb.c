@@ -22,7 +22,7 @@
 /*------------------------------м╥нд╪Ч------------------------------*/
 
 #include "uwb.h"
-#include "drv/meas/meas_distance.h"
+#include "uwb_post/uwb_post.h"
 
 osThreadId_t thread_UWB_id=0;
 

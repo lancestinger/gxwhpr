@@ -9,14 +9,12 @@
 #include <stdio.h>
 #include "decadriver/deca_device_api.h"
 #include "decadriver/deca_regs.h"
-#include "platform/deca/deca_sleep.h"
-#include "platform/port/port.h"
-//#include "usart.h"
-#include "platform/flash/stmflash.h"
-#include "meas_distance.h"
-#include "platform/delay/delay.h"
+#include "deca_plat/deca/deca_sleep.h"
+#include "deca_plat/port/port.h"
+#include "uwb_post/uwb_post.h"
+#include "delay/delay.h"
 //#include "timer.h"
-#include "algorithm/loc.h"
+#include "alg/post/1d/alg_1d.h"
 //#include "oled.h"
 //#include "dma.h"
 #include "log.h"
@@ -31,7 +29,6 @@
 
 
 typedef signed long long int64;
-typedef unsigned long long uint64;
 typedef unsigned long long uint64;
 
 /******************************************************************************
@@ -112,12 +109,15 @@ static const char tag_state_type_str[][30] =
 
 static const char ret_type_str[][20] = 
 {
-	"RET_SUCCESS",
-	"RET_FAILED",
-	"RECV_TIME_OUT",
-	"RECV_HIT",
-	"TIME_OUT",
-	"NETWORK_TIME_OUT"
+	"RET_SUCCESS",			
+	"RET_FAILED", 			
+	"RET_OTHER_FAILED", 
+	"RECV_TIME_OUT",		
+	"RECV_NO_IRQ",			
+	"RECV_DATA_ERR",		
+	"TIME_OUT", 				
+	"NO_SIGNAL",
+	"NETWORK_TIME_OUT", 	
 };
 
 static const char dwt_txrxs_type_str[][20] = 
@@ -149,35 +149,36 @@ UWB微秒（UUS）到设备时间单位（DTU，约15.65 ps）的转换系数。
 #define BUF_SIZE												101
 #define DW1000_100US_TIMER_CNT					0x6180  //计时次数/100us
 
-#define MAX_DYNAMIC_SLOT_FRAME_SEND_CNT	15
-#define MAX_DYNAMIC_SLOT_FRAME					100
-#define MAX_TAG_NUM											100
-#define SLOT_LONG												400//300  	  //单位微秒
-#define RANGING_SLOT_LONG								3000//2200	  //单位微秒
+#define MAX_TAG_NUM											50
+#define SLOT_LONG												300  	  //单位微秒
+#define RANGING_SLOT_LONG								2300	  //单位微秒
 
-#define NETWORK_CYCLE_TIME							3700		//网络周期，单位100us
 #define ACTIVE_TAG_TIMEOUT							10000		//激活标签超时时间，单位1us
-#define ALL_TAG_REGISTER_TIMEOUT				110000  //150000  //单位1us
 #define TAG_WAIT_SLOT_TIMEOUT						5000	  //标签等待时隙表超时时间，单位1us
-#define TAG_RANGING_TIMEOUT							230000  //10000//5000	//标签等待测距超时时间，单位1us
-#define FREE_TIME												50      //5ms空闲时间，单位100us
+#define FREE_TIME												5000      //5ms空闲时间，单位1us
 
 #define TX_NORMAL_TIMEOUT								400//300  		//单位1us，发送120字节时使用的时间
 #define RX_NORMAL_TIMEOUT								10000   //系统定时器，单位1.02us
 #define DM9000_RX_TIMEOUT								800     //单位1.02us
 						
-#define TAG_WAIT_TIMEOUT								60000//1300000 //单位1us
+#define TAG_WAIT_TIMEOUT								60000 //单位1us
 
 
 #define NO_OPEN_RECV					0
 #define OPEN_RECV						  1
+#define OPEN_DOUBLE_RECV			2
+
+
 
 #define ACK_REGISTER_MAX_NUM_PER 	25		//每次回应注册成功标签的个数
 #define SEND_RANGING_SLOT_MAX_NUM_PER 	25		//每次发送测距时隙的个数
 
 
+
 static uint8 g_rx_buf[FRAME_LEN_MAX];
 static uint8 g_rx_len;
+
+
 
 static anchor_t g_anchor_type;
 static tag_state_t tag_state = TAG_WAITE_ACTIVATION;
@@ -185,12 +186,20 @@ static u16 g_recv_tag_id = 0;
 static locate_net_info_t g_locate_net_info;
 static dwt_txrxs_t  g_tx_state = DWT_TX_NO_DONE;
 static dwt_txrxs_t  g_rx_state = DWT_RX_NO_DONE;
+static u8 g_activ_failed_cnt = 0;
 
+
+
+
+
+static u16 g_no_have_signal_cnt = 0;
 static u8 success_recv_total_cnt = 0;
 static tag_reg_info_t tag_reg_info_buf[MAX_TAG_NUM];
 u32 g_time_start, g_time_end, g_m_anchor_last_time_start;
 u32 g_last_tag_position_time;
-u8 first_acitve_flag = 0;
+u32 g_register_timeout_us, g_tag_ranging_timeout_us, g_network_cycle_timeout_100us;
+u32 g_ranging_timeout_us;
+u8 waite_acitve_flag = 1; //1表示第一次激活，0表示非第一次激活
 u8 g_ranging_flag = 0;
 u8 g_enable_get_power = 0;
 u8 g_interference_signal_flag = 0;
@@ -200,29 +209,19 @@ u8 g_get_rx_timestamp_flag = 0;
 u8 g_reset_filter = 1;
 u8 g_open_filter_flag = 1;
 dwt_auto_tx_power_config_t g_dwt_auto_tx_power_config;
+dwt_auto_ant_cal_t g_dwt_auto_ant_cal;
 key_vaule_t g_key_vaule;
+static rcv_signal_quality_t g_rcv_signal_quality;
+
 
 
 
 uint64 g_tx_timestamp = 0;
 uint64 g_rx_timestamp = 0;
-
-
-
-
-
-
-
-
-static float g_uwb_rg_ssi;
-
-
-
+float g_uwb_rg_ssi = 0;
 device_config_t			g_device_config;
-locate_net_info_t		g_locate_net_info;
 pos_info_t					g_pos_info;
-
-
+anchor_post_type_t	g_anchor_post_type = MID_ARNCHOR;
 
 
 
@@ -235,7 +234,7 @@ extern volatile u16 g_timer_cnt_100ms;
 *******************************************************************************/
 static uint64 get_tx_timestamp_u64(void);
 static uint64 get_rx_timestamp_u64(void);
-extern u32 calc_tx_power_config_value(u8* ptr);
+u32 calc_tx_power_config_value(u8* ptr);
 void init_anchor_type(void);
 void join_running_network(void);
 ret_t major_anchor(void);
@@ -246,10 +245,8 @@ void auto_choose_slave_tx_power(void);
 void auto_choose_main_tx_power(void);
 ret_t anchor_test_ranging(void);
 ret_t tag_test_ranging(void);
-
-
-
-
+void auto_cal_slave_ant(u8 *in_buf);
+void auto_cal_main_ant(void);
 
 
 
@@ -261,9 +258,7 @@ void save_device_para(void)
 	FILE* fd = 0;
 	u16 crc;
 	u16 len;
-	static u8 buf[100];
-
-	GLOBAL_MEMSET(buf,0x0,100);
+	static u8 buf[100] = {0};
 
 	if(g_device_config.device_type == TAG)
 	{
@@ -311,25 +306,26 @@ void reset_position_default_para(void)
 		
 		g_device_config.kalman_q = 3;
 		g_device_config.kalman_r = 10;
-		g_device_config.ant_rx_delay = RX_ANT_DLY;
-		g_device_config.ant_tx_delay = TX_ANT_DLY;
+		g_device_config.ant_delay = ANT_DLY;
 		g_device_config.dyn_slot_long = SLOT_LONG;
 		g_device_config.ranging_slot_long = RANGING_SLOT_LONG;
+		g_device_config.max_allow_tag_num = MAX_TAG_NUM;
 		g_device_config.position[0] = 0; 
 		g_device_config.position[1] = 0;
 		g_device_config.position[2] = 0; 
-		g_device_config.tx_power = 0xc0c0c0c0; //增益配置为0
-		g_device_config.anchor_idle_num = 1;
+		g_device_config.tx_power = 0x1f1f1f1f;//增益配置为33.5          //0xc0c0c0c0增益配置为0
+		g_device_config.anchor_idle_num = 3;
 		g_device_config.anchor_h = 0;
 		g_device_config.tag_h = 0;
 		g_device_config.chan = 2;
+		g_device_config.on_left = 0;
 		g_device_config.t2wall_actual_dist = 0;
-		g_device_config.t2wall_threshold = 0;
+		g_device_config.sig_qa_thr = 10;
+		g_device_config.t2wall_fl_num = 2;		
+		g_device_config.t2wall_threshold = 20; 
 		g_device_config.ref_position[0] = 0; 
 		g_device_config.ref_position[1] = 0;
-		g_device_config.ref_position[2] = 0; 		
-		
-
+		g_device_config.ref_position[2] = 0; 
 }
 
 
@@ -378,10 +374,6 @@ void get_device_para(void)
 		reset_position_default_para();		
 		save_device_para();	
 	}
-
-	g_device_config.dyn_slot_long = SLOT_LONG;
-	g_device_config.ranging_slot_long = RANGING_SLOT_LONG;
-
 	
 }
 
@@ -396,10 +388,11 @@ void show_position_para(void)
 	{
 		GLOBAL_PRINT(("tag_id: %d\r\n", g_device_config.tag_id));
 		GLOBAL_PRINT(("tag_h: %lf\r\n", g_device_config.tag_h));
-	GLOBAL_PRINT(("t2wall_d: %lf\r\n", g_device_config.t2wall_actual_dist));	
-	GLOBAL_PRINT(("t2wall_t: %lf\r\n", g_device_config.t2wall_threshold));		
-		
-	GLOBAL_PRINT(("ref_position:latitude %lf, longitude %lf, height %lf\r\n", g_device_config.ref_position[0], g_device_config.ref_position[1], g_device_config.ref_position[2]));			
+		GLOBAL_PRINT(("t2wall_d: %lf\r\n", g_device_config.t2wall_actual_dist));	
+		GLOBAL_PRINT(("t2wall_thr: %lf\r\n", g_device_config.t2wall_threshold));
+		GLOBAL_PRINT(("t2wall_fl_num: %lf\r\n", g_device_config.t2wall_fl_num));
+		GLOBAL_PRINT(("sig_qa_thr: %lf\r\n", g_device_config.sig_qa_thr));		
+		GLOBAL_PRINT(("ref_coord:latitude %lf, longitude %lf, height %lf\r\n", g_device_config.ref_position[0], g_device_config.ref_position[1], g_device_config.ref_position[2]));			
 	}
 	else if(g_device_config.device_type == ANCHOR)
 	{
@@ -407,17 +400,26 @@ void show_position_para(void)
 		GLOBAL_PRINT(("on_left: %d\r\n", g_device_config.on_left));
 		GLOBAL_PRINT(("anchor_h: %lf\r\n", g_device_config.anchor_h));
 		GLOBAL_PRINT(("anchor_idle_num: %d\r\n", g_device_config.anchor_idle_num));	
-		GLOBAL_PRINT(("position:latitude %lf, longitude %lf, height %lf\r\n", g_device_config.position[0], g_device_config.position[1], g_device_config.position[2]));			
+		GLOBAL_PRINT(("anchor_coord:latitude %lf, longitude %lf, height %lf\r\n", g_device_config.position[0], g_device_config.position[1], g_device_config.position[2]));	
+		GLOBAL_PRINT(("dyn_slot_long: %d\r\n", g_device_config.dyn_slot_long));
+		GLOBAL_PRINT(("rg_slot_long: %d\r\n", g_device_config.ranging_slot_long));	
+		GLOBAL_PRINT(("max_tag_num: %d\r\n", g_device_config.max_allow_tag_num));			
 	}
 
-	GLOBAL_PRINT(("ant_tx_delay: %d\r\n", g_device_config.ant_tx_delay));
-	GLOBAL_PRINT(("ant_rx_delay: %d\r\n", g_device_config.ant_rx_delay));	
+	GLOBAL_PRINT(("ant_tx_delay: %u cm, ant_tx_delay cnt: %u\r\n", antDelay2antDist(g_device_config.ant_delay), g_device_config.ant_delay));
+	GLOBAL_PRINT(("ant_rx_delay: %u cm, ant_rx_delay cnt: %u\r\n", antDelay2antDist(g_device_config.ant_delay), g_device_config.ant_delay));	
 	GLOBAL_PRINT(("tx_power: %2.1f db\r\n", calc_tx_power_config_value_to_db(g_device_config.tx_power)));	
-	GLOBAL_PRINT(("dyn_slot_long: %d\r\n", g_device_config.dyn_slot_long));
-	GLOBAL_PRINT(("ranging_slot_long: %d\r\n", g_device_config.ranging_slot_long));	
 	GLOBAL_PRINT(("chan: %d\r\n", g_device_config.chan));	
 
 }
+
+void show_anchor_state(void)
+{
+	GLOBAL_PRINT(("\r\n"));
+	GLOBAL_PRINT(("anchor_post_type: %d\r\n", g_anchor_post_type));	
+}
+
+
 
 
 static float calculatePower(float base, float N, uint8_t pulseFrequency) {
@@ -443,6 +445,7 @@ static float calculatePower(float base, float N, uint8_t pulseFrequency) {
     return estFpPwr;
 }
 
+
 float dwGetReceivePower(void) {
     dwt_rxdiag_t *diagnostics;
     dwt_readdiagnostics(diagnostics);
@@ -456,17 +459,64 @@ float dwGetReceivePower(void) {
 }
 
 
+void diagnostic_rcv_signal_quality(u8 *out_buf) {
+    dwt_rxdiag_t *diagnostics;
+		float A;
+		float calibrated_rx_power, rx_power, fp_power;
+		u16 f1, f2, f3;
+		s16 f2_noise_amp_diff, rx_fp_power_diff;
+		float twoPower17 = 131072.0;
+		rcv_signal_quality_t *p;
+
+		p = (rcv_signal_quality_t*)out_buf;
+		
+    dwt_readdiagnostics(diagnostics);
+		u16 J = (&diagnostics->stdNoise)[3];
+		u16 N = diagnostics->rxPreamCount;
+
+		calibrated_rx_power = calculatePower(J * twoPower17, N, config.prf);
+
+    if(DWT_PRF_16M == config.prf) {
+        A = 113.77;
+    } else {
+        A = 121.74;
+    }
+
+		rx_power = 10.0 * log10((J*twoPower17) / (N * N)) - A;
+
+		f1 = diagnostics->firstPathAmp1;
+		f2 = (&diagnostics->stdNoise)[1];
+		f3 = (&diagnostics->stdNoise)[2];
+		
+		fp_power = 10.0 * log10((pow(f1,2)+pow(f2,2)+pow(f3,2)) / (N * N)) - A;
+
+		
+		rx_fp_power_diff = rx_power - fp_power;
+		f2_noise_amp_diff = f1 - diagnostics->stdNoise;
+
+		p->std_noise = diagnostics->stdNoise;
+		p->rx_power = calibrated_rx_power;
+		p->rx_fp_power_diff = (s16)rx_fp_power_diff;
+		p->f1_noise_amp_diff = f2_noise_amp_diff;		
+
+		return;
+
+
+}
+
+
 
 static void rx_ok_cb(const dwt_callback_data_t *cb_data)
 {
     int i;		
+		u32 time_start, time_end, nus;
 
 
 		if((cb_data->event == DWT_SIG_RX_ERROR) || (cb_data->event == DWT_SIG_RX_PHR_ERROR) || (cb_data->event == DWT_SIG_RX_SYNCLOSS) || \
 			(cb_data->event == DWT_SIG_RX_SFDTIMEOUT) || (cb_data->event == DWT_SIG_RX_PTOTIMEOUT))
 		{
 			g_rx_state = DWT_RX_ERR;
-			DBG_PRINT("rx_ok_cb DWT_RX_ERR value is %d\r\n", cb_data->event);	
+			//DBG_ERR_PRINT("rx_ok_cb DWT_RX_ERR value is %d\r\n", cb_data->event);	
 		}
 		else if(cb_data->event == DWT_SIG_RX_TIMEOUT)
 		{
@@ -491,29 +541,36 @@ static void rx_ok_cb(const dwt_callback_data_t *cb_data)
 					if(g_get_rx_timestamp_flag == 1)
 					{
 						g_rx_timestamp = get_rx_timestamp_u64();
+
+						//time_start = get_cur_time();
+						 diagnostic_rcv_signal_quality((u8*)&g_rcv_signal_quality);
+						//time_end = get_cur_time();
+						//nus = get_count_time(time_start, time_end);
+						//DBG_PRINT("time: %d\r\n", nus);
+						
+						//DBG_PRINT("calibrated_rx_power:%lf, rx_fp_power_diff:%d, std_noise:%d, f2_noise_amp_diff:%d\r\n", \
+						//		g_rcv_signal_quality.rx_power, g_rcv_signal_quality.rx_fp_power_diff, g_rcv_signal_quality.std_noise, g_rcv_signal_quality.f1_noise_amp_diff);	
 					}
 					g_get_rx_timestamp_flag = 0;
 					
-					//DBG_PRINT("rx_ok_cb DWT_SIG_RX_OKAY value is %d\r\n", cb_data->event);
 		  }
-			else
-			{
-				DBG_PRINT("cb_data->datalength is %d\r\n", cb_data->datalength);
-			}
 
 		}
 		else
 		{
 		
-			DBG_PRINT("rx_ok_cb other env  is %d\r\n", cb_data->event);
+			//DBG_ERR_PRINT("rx_ok_cb other env  is %d\r\n", cb_data->event);
 		}
-
-		if(g_pos_info.tag_state == TAG_WAITE_ACTIVATION || g_pos_info.anchor_sub_state == SA_NET_ACTIVATION_ALL_TAG || \
-			g_ranging_flag == 1 || g_dwt_auto_tx_power_config.auto_choose_tx_power == 1 || g_detection_signal_flag == 1 || \
-			g_enable_get_power == 1)	
+		
+		if(cb_data->event != DWT_SIG_RX_TIMEOUT)
 		{
-			g_uwb_rg_ssi = dwGetReceivePower();
-		}				
+			if(g_pos_info.tag_state == TAG_WAITE_ACTIVATION || g_pos_info.anchor_sub_state == SA_NET_ACTIVATION_ALL_TAG || \
+				g_pos_info.anchor_state == MA_NET_ACTIVATION_ALL_TAG || g_ranging_flag == 1 || g_dwt_auto_tx_power_config.auto_choose_tx_power == 1 || \
+				g_detection_signal_flag == 1 || g_enable_get_power == 1)	
+			{
+				g_uwb_rg_ssi = dwGetReceivePower();
+			}
+		}
 
 }
 
@@ -541,6 +598,20 @@ static void tx_conf_cb(const dwt_callback_data_t *cb_data)
 
 }
 
+static void open_dw1000_dbl_recv(void)
+{
+	dwt_setdblrxbuffmode(1);
+	dwt_setautorxreenable(1);	
+}
+
+
+static void close_dw1000_dbl_recv(void)
+{
+	dwt_setautorxreenable(0); 
+	dwt_setdblrxbuffmode(0);
+}
+
+
 
 /******************************************************************************
 												         DWM100初始化
@@ -562,16 +633,12 @@ void DWM1000_init(void)
     spi_set_rate_high();//回复SPI频率
     GLOBAL_PRINT(("DWMstep 5\r\n"));
     dwt_configure(&config);//配置DW1000
-   // dwt_setrxantennadelay(RX_ANT_DLY);		//设置接收天线延迟
-   // dwt_settxantennadelay(TX_ANT_DLY);		//设置发射天线延迟
-    dwt_setrxantennadelay(g_device_config.ant_tx_delay);		//设置接收天线延迟
-    dwt_settxantennadelay(g_device_config.ant_rx_delay);		//设置发射天线延迟  
+    dwt_setrxantennadelay(g_device_config.ant_delay);		//设置接收天线延迟
+    dwt_settxantennadelay(g_device_config.ant_delay);		//设置发射天线延迟  
      
-	  dwt_setinterrupt(DWT_INT_RFCG | DWT_INT_TFRS | (DWT_INT_ARFE | DWT_INT_RFSL | DWT_INT_SFDT | DWT_INT_RPHE | DWT_INT_RFCE | DWT_INT_RFTO | DWT_INT_RXPTO), 1);
-	//dwt_setinterrupt(DWT_INT_RFCG | (DWT_INT_ARFE | DWT_INT_RFSL | DWT_INT_SFDT | DWT_INT_RPHE | DWT_INT_RFCE | DWT_INT_RFTO | DWT_INT_RXPTO), 1);//无发送中断
-	//	dwt_setinterrupt(DWT_INT_RFCG | (DWT_INT_ARFE | DWT_INT_RFSL | DWT_INT_RPHE | DWT_INT_RFCE | DWT_INT_RFTO | DWT_INT_RXPTO), 1);//无发送中断,前导码超时中断
-	dwt_setcallbacks(&tx_conf_cb, &rx_ok_cb);
-    GLOBAL_PRINT(("DWMstep 8\r\n"));
+	  dwt_setinterrupt(DWT_INT_RFCG | DWT_INT_TFRS | (DWT_INT_ARFE | DWT_INT_RFSL | DWT_INT_SFDT | DWT_INT_RPHE | DWT_INT_RFCE | DWT_INT_RFTO | DWT_INT_RXPTO | DWT_INT_RXOVRR), 1);
+		dwt_setcallbacks(&tx_conf_cb, &rx_ok_cb);
+
 }
 /******************************************************************************
 												         检测DWM1000配置参数是否被改变
@@ -708,7 +775,7 @@ u32 calc_tx_power_config_value(u8* ptr)
 	
 	tx_power |= tx_power_temp;	
 
-
+	return tx_power;
 
 }
 
@@ -729,242 +796,6 @@ float calc_tx_power_config_value_to_db(u32 value)
 	return db;
 	
 }
-
-
-
-
-/*注：系统时间计数器总共有40位，低9位通常为0，计时频率为499.2 MHz×128（63.8976 GHz），即每15.65ps累加一次，15.65ps * 0x618000 = 99.999us
-	dw1000延迟发送时间要大于300us，否则会发送失败
-*/
-ret_t dm9000_send_data(u8 *buf, u16 len, u8 mode, u32 delay_tx_time, u32 timeout_us)
-{	
-	ret_t ret = RET_SUCCESS;
-	u8 date;
-	u32 time_start;
-	u32 time_end;
-	u32 nus;
-	u32 flags;
-	u32 tx_time;
-
-
-	time_start = get_cur_time();
-	dwt_forcetrxoff();
-	dwt_rxreset();
-
-	osEventFlagsClear (evt_id, DM1000_TXRX_FLAG);
-	g_tx_state = DWT_TX_NO_DONE;
-
-	dwt_writetxdata(len, buf, 0);//写入发送数据
-	dwt_writetxfctrl(len, 0);//设定发送长度
-
-	if(mode == DWT_START_TX_DELAYED)
-	{
-			//tx_time = dwt_readsystimestamphi32() + delay_tx_time;
-			tx_time = delay_tx_time;
-			dwt_setdelayedtrxtime(tx_time);
-	}		
-
-	dwt_starttx(mode);
-
-	time_end = get_cur_time();
-	nus = get_count_time(time_start, time_end);
-
-	time_start = get_cur_time();
-	
-	if(timeout_us != osWaitForever)
-			flags = osEventFlagsWait(evt_id,DM1000_TXRX_FLAG,osFlagsWaitAny, (timeout_us/100));
-	else
-			flags = osEventFlagsWait(evt_id,DM1000_TXRX_FLAG,osFlagsWaitAny, osWaitForever);
-
-	if(flags == osFlagsErrorTimeout)
-	{
-		dwt_forcetrxoff(); //this will clear all events
-		dwt_rxreset();	
-		DBG_PRINT("poll sent timeout\r\n");
-		ret = RET_FAILED;
-		goto end;
-	}
-	
-	time_end = get_cur_time();
-	nus = get_count_time(time_start, time_end);
-
-	dwt_isr();
-	
-	if(g_tx_state == DWT_TX_DONE)
-	{
-		time_end = get_cur_time();
-		nus = get_count_time(time_start, time_end);
-	//	DBG_PRINT("sent ok\r\n");
-		goto end;
-	}
-	else if(g_tx_state == DWT_TX_ERR)
-	{		
-		time_end = get_cur_time();
-		nus = get_count_time(time_start, time_end);		
-		ret = RET_FAILED;
-		DBG_PRINT("sent failed\r\n");
-		goto end;
-	}
-	else
-	{
-		ret = RET_FAILED;
-		DBG_PRINT("sent other failed\r\n");
-	}
-	
-end:
-		if(ret != RET_SUCCESS)
-		{
-			DWM1000_init();
-		}
-
-    return ret;	
-	 
-}
-
-
-
-
-/**
-* 功能：dm9000接受数据 
-* 参数：
-* 	rx_buf：接受数据缓存
-* 返回：接受到的数据长度
-**/
-/*注：系统时间计数器总共有40位，低9位通常为0，计时频率为499.2 MHz×128（63.8976 GHz），即每15.65ps累加一次，15.65ps * 0x618000 = 99.999us*/
-ret_t dm9000_recv_data(u8 *rx_data_buf, u16 *rx_data_len, u8 open_recv, u32 rx_delay_time, u32 timeout_us)
-{
-	u32 status_reg = 0;
-	u32 len;
-	ret_t ret = RET_SUCCESS;
-	u32 time_start;
-	u32 time_end;
-	u32 nus;
-	u32 flags;
-	u8 date;
-	float time;
-	u32 rx_time;
-
-
-	g_rx_state = DWT_RX_NO_DONE;
-	g_rx_len = 0;
-
-	dwt_forcetrxoff();
-	dwt_rxreset();
-
-	time_start = get_cur_time();
-	osEventFlagsClear(evt_id, DM1000_TXRX_FLAG);
-
-	if(timeout_us < 300)
-	{
-		DBG_PRINT("recv failed, timeout time is too short\r\n");
-	}
-	
-	
-	if(open_recv == OPEN_RECV)
-	{
-		//dwt_setrxtimeout(0);//设定接收超时时间，0位没有超时时间
-		if(timeout_us != osWaitForever)
-				dwt_setrxtimeout(timeout_us);
-		else
-				dwt_setrxtimeout(0);//设定接收超时时间，0位没有超时时间
-
-
-		if(rx_delay_time > 0)
-		{
-			rx_time = rx_delay_time;
-			dwt_setdelayedtrxtime(rx_time);
-			dwt_rxenable(1); //延迟接受
-		}
-		else
-		{
-			dwt_rxenable(0);//打开接收
-		}
-	}
-
-
-	if(timeout_us != osWaitForever)
-	{
-		time = timeout_us * 1.0256;
-		timeout_us = (u32)time;
-		timeout_us += 100; //防止dw1000故障无法产生接受超时中断
-	}
-
-		time_end = get_cur_time();
-		nus = get_count_time(time_start, time_end);	
-	
-	time_start = get_cur_time();
-
-	if(timeout_us != osWaitForever)
-			flags = osEventFlagsWait(evt_id,DM1000_TXRX_FLAG,osFlagsWaitAny, (timeout_us/100));
-	else
-			flags = osEventFlagsWait(evt_id,DM1000_TXRX_FLAG,osFlagsWaitAny, osWaitForever);
-	if(flags == osFlagsErrorTimeout)
-	{
-		time_start = get_cur_time();	
-		dwt_forcetrxoff(); //this will clear all events
-		dwt_rxreset();
-		time_end = get_cur_time();
-		nus = get_count_time(time_start, time_end);
-		DBG_PRINT("recv failed, no recv irq\r\n");
-		ret = RECV_TIME_OUT;
-		goto end;
-	}
-
-	time_end = get_cur_time();
-	nus = get_count_time(time_start, time_end);	
-
-//	date = GPIO_ReadInputDataBit(GPIOA,GPIO_Pin_3);
-//	date =	dwt_checkIRQ();
-
-
-	time_start = get_cur_time();			
-	dwt_isr();	
-
-	if(g_rx_state == DWT_RX_ERR)
-	{
-		time_end = get_cur_time();
-		nus = get_count_time(time_start, time_end);		
-		ret = RECV_HIT;
-		DBG_PRINT("recv hit\r\n");
-		goto end;
-	}
-	else if(g_rx_state == DWT_RX_OK)
-	{
-		if(g_rx_len > 0)
-		{
-			memcpy(rx_data_buf, g_rx_buf, g_rx_len);
-			*rx_data_len = g_rx_len;
-				time_end = get_cur_time();
-			nus = get_count_time(time_start, time_end);		
-		}
-		else
-		{ 	
-			DBG_PRINT("g_rx_len is 0\r\n");
-			ret = RET_FAILED;
-			goto end;
-		} 		
-	}
-	else if(g_rx_state == DWT_RX_TIMEOUT)
-	{	
-		DBG_PRINT("recv timeout\r\n");
-		ret = RECV_TIME_OUT;
-		goto end;
-	} 
-	else
-	{
-		ret = RET_FAILED;
-		DBG_PRINT("recv other failed\r\n");
-	}
-
-
-
-end:
-
-	return ret;
-
-
-}
-
 
 
 ret_t make_package(dm_comm_t cmd, u16 src_id, u16 target_id, u8 src_device_type, u8 src_device_sub_type, u8* buf, u16 buf_len, u8* package_buf, u16 *package_buf_len)
@@ -1040,6 +871,260 @@ end:
 
 
 
+/*注：系统时间计数器总共有40位，低9位通常为0，计时频率为499.2 MHz×128（63.8976 GHz），即每15.65ps累加一次，15.65ps * 0x618000 = 99.999us
+	dw1000延迟发送时间要大于300us，否则会发送失败
+*/
+ret_t dm9000_send_data(u8 *buf, u16 len, u8 mode, u32 delay_tx_time, u32 timeout_us)
+{	
+	ret_t ret = RET_SUCCESS;
+	u8 date;
+	u32 time_start;
+	u32 time_end;
+	u32 nus;
+	u32 flags;
+	u32 tx_time;
+
+
+	time_start = get_cur_time();
+	dwt_forcetrxoff();
+	dwt_rxreset();
+
+	osEventFlagsClear (evt_id, DM1000_TXRX_FLAG);
+	g_tx_state = DWT_TX_NO_DONE;
+
+	dwt_writetxdata(len, buf, 0);//写入发送数据
+	dwt_writetxfctrl(len, 0);//设定发送长度
+
+	if(mode == DWT_START_TX_DELAYED)
+	{
+			//tx_time = dwt_readsystimestamphi32() + delay_tx_time;
+			tx_time = delay_tx_time;
+			dwt_setdelayedtrxtime(tx_time);
+	}		
+
+	dwt_starttx(mode);
+
+	time_end = get_cur_time();
+	nus = get_count_time(time_start, time_end);
+
+	time_start = get_cur_time();
+	
+	if(timeout_us != osWaitForever)
+			flags = osEventFlagsWait(evt_id,DM1000_TXRX_FLAG,osFlagsWaitAny, (timeout_us/100));
+	else
+			flags = osEventFlagsWait(evt_id,DM1000_TXRX_FLAG,osFlagsWaitAny, osWaitForever);
+
+	if(flags == osFlagsErrorTimeout)
+	{
+		dwt_forcetrxoff(); //this will clear all events
+		dwt_rxreset();	
+		DBG_ERR_PRINT("poll sent timeout\r\n");
+		ret = RET_FAILED;
+		goto end;
+	}
+	
+	time_end = get_cur_time();
+	nus = get_count_time(time_start, time_end);
+
+	dwt_isr();
+	
+	if(g_tx_state == DWT_TX_DONE)
+	{
+		time_end = get_cur_time();
+		nus = get_count_time(time_start, time_end);
+	//	DBG_PRINT("sent ok\r\n");
+		goto end;
+	}
+	else if(g_tx_state == DWT_TX_ERR)
+	{		
+		time_end = get_cur_time();
+		nus = get_count_time(time_start, time_end);		
+		ret = RET_FAILED;
+		DBG_ERR_PRINT("sent failed\r\n");
+		goto end;
+	}
+	else
+	{
+		ret = RET_FAILED;
+		DBG_ERR_PRINT("sent other failed\r\n");
+	}
+	
+end:
+		if(ret != RET_SUCCESS)
+		{
+			DWM1000_init();
+		}
+
+    return ret;	
+	 
+}
+
+
+
+
+/**
+* 功能：dm9000接受数据 
+* 参数：
+* 	rx_buf：接受数据缓存
+* 返回：接受到的数据长度
+**/
+/*注：系统时间计数器总共有40位，低9位通常为0，计时频率为499.2 MHz×128（63.8976 GHz），即每15.65ps累加一次，15.65ps * 0x618000 = 99.999us*/
+ret_t dm9000_recv_data(u8 *rx_data_buf, u16 *rx_data_len, u8 open_recv, u32 rx_delay_time, u32 timeout_us)
+{
+	u32 status_reg = 0;
+	u32 len;
+	ret_t ret = RET_SUCCESS;
+	u32 time_start;
+	u32 time_end;
+	u32 nus;
+	u32 flags;
+	u8 date;
+	float time;
+	u32 rx_time;
+	u8 buf[BUF_SIZE] = {0};
+	u16 buf_len;
+	u16 src_id, target_id;
+	u8 src_device_type;
+	u8 src_device_sub_type;
+	u8 cmd;
+
+
+	g_rx_state = DWT_RX_NO_DONE;
+	g_rx_len = 0;
+
+//	dwt_forcetrxoff();
+//	dwt_rxreset();
+
+	time_start = get_cur_time();
+	osEventFlagsClear(evt_id, DM1000_TXRX_FLAG);
+
+	if(timeout_us < 300)
+	{
+		DBG_ERR_PRINT("recv failed, timeout time is too short\r\n");
+	}
+	
+	
+	if(open_recv == OPEN_RECV || open_recv == OPEN_DOUBLE_RECV)
+	{
+		dwt_forcetrxoff();
+		dwt_rxreset();
+
+		if(open_recv == OPEN_DOUBLE_RECV)
+		{
+			open_dw1000_dbl_recv();
+		}
+		
+		//dwt_setrxtimeout(0);//设定接收超时时间，0位没有超时时间
+		if(timeout_us != osWaitForever)
+				dwt_setrxtimeout(timeout_us);
+		else
+				dwt_setrxtimeout(0);//设定接收超时时间，0位没有超时时间
+
+		if(rx_delay_time > 0)
+		{
+			rx_time = rx_delay_time;
+			dwt_setdelayedtrxtime(rx_time);
+			dwt_rxenable(1); //延迟接受
+		}
+		else
+		{
+			dwt_rxenable(0);//打开接收
+		}
+	}
+
+
+	if(timeout_us != osWaitForever)
+	{
+		time = timeout_us * 1.0256;
+		timeout_us = (u32)time;
+		timeout_us += 100; //防止dw1000故障无法产生接受超时中断
+	}
+
+		time_end = get_cur_time();
+		nus = get_count_time(time_start, time_end);	
+	
+	time_start = get_cur_time();
+
+	if(timeout_us != osWaitForever)
+			flags = osEventFlagsWait(evt_id,DM1000_TXRX_FLAG,osFlagsWaitAny, (timeout_us/100));
+	else
+			flags = osEventFlagsWait(evt_id,DM1000_TXRX_FLAG,osFlagsWaitAny, osWaitForever);
+	if(flags == osFlagsErrorTimeout)
+	{
+		time_start = get_cur_time();	
+		dwt_forcetrxoff(); //this will clear all events
+		dwt_rxreset();
+		time_end = get_cur_time();
+		nus = get_count_time(time_start, time_end);
+		//DBG_ERR_PRINT("recv failed, no recv irq\r\n");
+		ret = RECV_NO_IRQ;
+		goto end;
+	}
+
+	time_end = get_cur_time();
+	nus = get_count_time(time_start, time_end);	
+
+	time_start = get_cur_time();			
+	dwt_isr();	
+
+	if(g_rx_state == DWT_RX_ERR)
+	{
+		time_end = get_cur_time();
+		nus = get_count_time(time_start, time_end);		
+		ret = RECV_DATA_ERR;
+	//	DBG_ERR_PRINT("recv data err\r\n");
+		goto end;
+	}
+	else if(g_rx_state == DWT_RX_OK)
+	{
+		if(g_rx_len > 0)
+		{
+			if(Flash_Device_ID != 0 && g_anchor_post_type == HEAD_ANCHOR)
+			{
+				ret = parsing_package(g_rx_buf, g_rx_len, &cmd, &src_id,&target_id, &src_device_type, &src_device_sub_type, buf, &buf_len);
+				if(ret == RET_SUCCESS && src_id == (Flash_Device_ID-1) && src_device_type == ANCHOR)
+				{
+					init_anchor_type();
+				}
+			}
+
+			if(rx_data_buf != NULL && rx_data_len != NULL)
+			{
+				memcpy(rx_data_buf, g_rx_buf, g_rx_len);
+				*rx_data_len = g_rx_len;
+			}
+			
+			time_end = get_cur_time();
+			nus = get_count_time(time_start, time_end);		
+		}
+		else
+		{ 	
+	//		DBG_ERR_PRINT("g_rx_len is 0\r\n");
+			ret = RET_FAILED;
+			goto end;
+		} 		
+	}
+	else if(g_rx_state == DWT_RX_TIMEOUT)
+	{	
+	//	DBG_ERR_PRINT("recv timeout\r\n");
+		ret = RECV_TIME_OUT;
+		goto end;
+	} 
+	else
+	{
+		DWM1000_init();
+		ret = RET_OTHER_FAILED;
+		DBG_ERR_PRINT("recv other failed, g_rx_state: %d\r\n", g_rx_state);
+	}
+
+
+end:
+
+	return ret;
+
+
+}
+
 
 void detection_signal(void)
 {	
@@ -1077,7 +1162,7 @@ void detection_signal(void)
 				{
 					time_out_cnt = 0;
 					suc_rcv_rate = 0.0;
-					sprintf((u8*)&g_key_vaule.key_value_buf[0], "recv_suc_rate:%2.1f,current_rssi:no signal", suc_rcv_rate);
+					sprintf((u8*)&g_key_vaule.key_value_buf[0], "recvSucRate:%2.1f,recvRssi:0", suc_rcv_rate);
 					g_key_vaule.key_vaule_valid_flag = 1;
 					DBG_PRINT("%s\r\n", g_key_vaule.key_value_buf);
 				}
@@ -1106,7 +1191,7 @@ void detection_signal(void)
 			suc_rcv_rate = suc_rcv_cnt/500.0; 
 			suc_rcv_rate *= 100;		
 			
-			sprintf((u8*)&g_key_vaule.key_value_buf[0], "recv_suc_rate:%2.1f,current_rssi:%2.2f", suc_rcv_rate, g_uwb_rg_ssi);
+			sprintf((u8*)&g_key_vaule.key_value_buf[0], "recvSucRate:%2.1f,recvRssi:%2.2f", suc_rcv_rate, g_uwb_rg_ssi);
 			DBG_PRINT("%s\r\n",g_key_vaule.key_value_buf);
 			cnt = 0;
 			suc_rcv_cnt = 0;
@@ -1154,6 +1239,38 @@ void interference_signal(void)
 
 
 
+static u32 calc_register_timeout(void)
+{
+	u16 slot_forecast_cnt = 0;
+	u16 surplus_dynamic_slot; //剩余动态帧个数
+	u32 register_timeout_us;
+
+	//预测最大允许标签情况下，总共需要的注册时间。
+  //slot_forecast_cnt = (u32)(log(1.0/g_device_config.max_allow_tag_num)/log(0.80)); //预测多少轮时隙分配可以让最大允许标签注册完毕
+	register_timeout_us = g_device_config.max_allow_tag_num;
+	surplus_dynamic_slot = 0.80 * g_device_config.max_allow_tag_num;
+  //for(i=1; i<slot_forecast_cnt; i++)
+	while(1)
+	{
+		slot_forecast_cnt++;
+		register_timeout_us += surplus_dynamic_slot;
+		surplus_dynamic_slot *= 0.80;
+		if(surplus_dynamic_slot < 1)
+		{
+			break;
+		} 	
+	}
+
+	register_timeout_us *= g_device_config.dyn_slot_long;
+	register_timeout_us += (slot_forecast_cnt * TX_NORMAL_TIMEOUT * 2); 
+	register_timeout_us += DM9000_RX_TIMEOUT;
+	register_timeout_us += (slot_forecast_cnt * 100 * 2);
+	DBG_PRINT("tag register timout time:%u us,slot_forecast_cnt:%u\r\n", register_timeout_us,slot_forecast_cnt);
+
+	return register_timeout_us;
+}
+
+
 
 u32 m_active_sn = 0;
 ret_t m_activation_all_tag(void)
@@ -1173,7 +1290,7 @@ ret_t m_activation_all_tag(void)
 		u32 delay_tx_time;
 		
 		
-		time_start = get_cur_time();
+		time_start = get_cur_time();	
 
 		while(1)
 		{
@@ -1215,13 +1332,17 @@ ret_t m_activation_all_tag(void)
 			memcpy(&buf[24], &g_device_config.position[2], 8);
 			buf[32] = g_device_config.on_left;
 			memcpy(&buf[33], (u8*)&g_device_config.anchor_h, 4);
+			memcpy(&buf[37], (u8*)&g_device_config.max_allow_tag_num, 2);
+			memcpy(&buf[39], (u8*)&g_device_config.dyn_slot_long, 2);
+			memcpy(&buf[41], (u8*)&g_device_config.ranging_slot_long, 2);
+			memcpy(&buf[43], (u8*)&g_register_timeout_us, 4);
 
 			src_id = Flash_Device_ID;
 			target_id = Flash_Device_ID + 1;
 
 			time_start2 = get_cur_time();	
 			//发送激活标签帧
-			ret = make_package(ACTIVATION_ALL_TAG_CMD, src_id, target_id, ANCHOR, MAIN_ANCHOR, buf, 37, package_buf, &package_buf_len);
+			ret = make_package(ACTIVATION_ALL_TAG_CMD, src_id, target_id, ANCHOR, MAIN_ANCHOR, buf, 48, package_buf, &package_buf_len);
 			if(ret != RET_SUCCESS)
 			{
 				continue;
@@ -1230,7 +1351,7 @@ ret_t m_activation_all_tag(void)
 			ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_DELAYED, delay_tx_time, (TX_NORMAL_TIMEOUT+1000));
 			if(ret != RET_SUCCESS)
 			{
-				DBG_PRINT("MA m_active data single send fail,ret=%s\r\n",ret_type_str[ret]);
+				DBG_ERR_PRINT("MA m_active data single send fail,ret=%s\r\n",ret_type_str[ret]);
 				continue;
 			}
 
@@ -1243,10 +1364,10 @@ ret_t m_activation_all_tag(void)
 			m_active_sn++;
 			
 			//接受从基站激活标签帧
-			ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, (DM9000_RX_TIMEOUT+1000));
+			ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, (DM9000_RX_TIMEOUT+1000));			
 			if(ret != RET_SUCCESS)
 			{		
-				DBG_PRINT("MA s_ctive data rcv failed0,ret=%s\r\n",ret_type_str[ret]);
+				DBG_ERR_PRINT("MA s_ctive data rcv failed0,ret=%s\r\n",ret_type_str[ret]);
 				continue;
 			}
 
@@ -1256,7 +1377,7 @@ ret_t m_activation_all_tag(void)
 				(target_id == Flash_Device_ID) && (src_id == (Flash_Device_ID+1))&& \
 				(src_device_type == ANCHOR) && (src_device_sub_type == SUB_ANCHOR)))
 			{
-				DBG_PRINT("MA s_active data rcv failed1: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
+				DBG_ERR_PRINT("MA s_active data rcv failed1: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
 											ret_type_str[ret],
 											dm_comm_type_str[cmd],
 											target_id,src_id,
@@ -1272,6 +1393,7 @@ ret_t m_activation_all_tag(void)
 				DBG_PRINT("-------------------nus2 is %8x\r\n", nus2);
 				ret = RET_SUCCESS;
 				DBG_PRINT("MA s_active data rcv suc! sid:%d , tid:%d\r\n",src_id,target_id);
+				DBG_RSSI_PRINT("RSSI:%2.2f\r\n", g_uwb_rg_ssi);
 				osDelay(1);
 				goto end;
 			}
@@ -1302,8 +1424,8 @@ ret_t s_wait_activation_all_tag(void)
 		u8 cmd;
 		u8 src_device_type;
 		u8 src_device_sub_type;
+		u8 have_sig_flag = 0;
 		u32 sn;
-		float uwb_rssi;
 		
 		ret_t ret = RET_SUCCESS;
 
@@ -1317,24 +1439,38 @@ ret_t s_wait_activation_all_tag(void)
 			if(nus > ACTIVE_TAG_TIMEOUT)
 			{			
 				DBG_PRINT("SA active timeout! %d/%d (unit:1us)\r\n",nus,ACTIVE_TAG_TIMEOUT);
-				ret = RET_FAILED;
+				if(have_sig_flag == 1)
+				{
+					ret = RET_FAILED;
+				}
+				else
+				{
+					ret = NO_SIGNAL;
+				}
 				goto end;
 			}	
 			
 			//接受主基站激活帧
-			ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, (ACTIVE_TAG_TIMEOUT - nus));
+			ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, (ACTIVE_TAG_TIMEOUT - nus));			
 			if(ret != RET_SUCCESS)
 			{	
-				DBG_PRINT("SA active data rcv failed0! ret=%s\r\n",ret_type_str[ret]);
+				if(ret != RECV_TIME_OUT)
+				{
+					have_sig_flag = 1;
+				}
+				
+				DBG_ERR_PRINT("SA active data rcv failed0! ret=%s\r\n",ret_type_str[ret]);
 				continue;
-			}			
+			}	
+
+			have_sig_flag = 1;
 		
 			ret = parsing_package(package_buf, package_buf_len, &cmd, &src_id,&target_id, &src_device_type, &src_device_sub_type, buf, &buf_len);
 			if(!((ret == RET_SUCCESS) && (cmd == ACTIVATION_ALL_TAG_CMD) && \
 				(target_id == Flash_Device_ID) && (src_id == (Flash_Device_ID-1))&& \
-				(src_device_type == ANCHOR) && (src_device_sub_type == MAIN_ANCHOR) && (buf_len == 37)))
+				(src_device_type == ANCHOR) && (src_device_sub_type == MAIN_ANCHOR) && (buf_len == 48)))
 			{
-				DBG_PRINT("SA active data rcv failed1: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
+				DBG_ERR_PRINT("SA active data rcv failed1: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
 											ret_type_str[ret],
 											dm_comm_type_str[cmd],
 											target_id,src_id,
@@ -1355,17 +1491,20 @@ ret_t s_wait_activation_all_tag(void)
 					if(buf[0] == START_TEST_RANGING)
 					{
 						anchor_test_ranging();
-					}
-					
+					}			
 				}
+				else if(((ret == RET_SUCCESS) && (cmd == AUTO_CAL_ANT) &&\
+					(src_device_type == ANCHOR) && (src_device_sub_type == MAIN_ANCHOR) && (buf_len == 3)))
+				{
+					auto_cal_slave_ant(buf);		
+				}					
 											
 				continue;
 			}
 
 			sn = buf[0] + (buf[1] << 8) + (buf[2] <<16) + (buf[3] <<24);
-			DBG_PRINT("main anchor src_id: %d, sn: %u\r\n", src_id, sn);	
-
-			uwb_rssi = g_uwb_rg_ssi;
+			DBG_PRINT("main anchor src_id: %d, sn: %u\r\n", src_id, sn);
+			DBG_RSSI_PRINT("RSSI:%2.2f\r\n", g_uwb_rg_ssi);	
 
 			//同步开始计数时间
 			offset_time = (buf[4] << 24) | (buf[5] << 16) | (buf[6] << 8) | buf[7];
@@ -1406,7 +1545,7 @@ ret_t s_wait_activation_all_tag(void)
 			ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT);
 			if(ret != RET_SUCCESS)
 			{
-				DBG_PRINT("SA active data send failed! ret=%s\r\n",ret_type_str[ret]);
+				DBG_ERR_PRINT("SA active data send failed! ret=%s\r\n",ret_type_str[ret]);
 				continue;
 			}
 			else
@@ -1414,8 +1553,7 @@ ret_t s_wait_activation_all_tag(void)
 				DBG_PRINT("SA active data send suc!\r\n");
 				time_end2 = get_cur_time();
 				nus2 = get_count_time(time_start2, time_end2); 	
-				//DBG_PRINT("-------------------nus2 slave is %8x\r\n", nus2);	
-				DBG_PRINT("-------------------RSSI:%2.2f\r\n", uwb_rssi);	
+				//DBG_PRINT("-------------------nus2 slave is %8x\r\n", nus2);				
 				goto end;
 			}
 
@@ -1473,7 +1611,11 @@ ret_t tag_wait_activation(void)
 				else if(g_interference_signal_flag == 1)
 				{
 					interference_signal();
-				}				
+				}
+				if(g_dwt_auto_ant_cal.auto_ant_cal_open == 1)
+				{
+					auto_cal_main_ant();
+				}					
 
 				if(have_anchor_flag == 1)
 				{
@@ -1491,7 +1633,7 @@ ret_t tag_wait_activation(void)
 								DBG_PRINT("tag_position_valid_flag = POS_INVALID");
 							}
 						}
-						DBG_PRINT("main anchor actived failed0[%1d],\r\n",ret);
+						DBG_ERR_PRINT("main anchor actived failed0[%1d],\r\n",ret);
 						continue;
 					}						
 				}
@@ -1500,7 +1642,7 @@ ret_t tag_wait_activation(void)
 					ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, osWaitForever); //一直等待接受
 					if(ret != RET_SUCCESS)
 					{ 
-						DBG_PRINT("main anchor actived failed0[%1d],\r\n",ret);
+						DBG_ERR_PRINT("main anchor actived failed0[%1d],\r\n",ret);
 						continue;
 					}	
 					have_anchor_flag = 1;
@@ -1510,10 +1652,10 @@ ret_t tag_wait_activation(void)
 			
 				ret = parsing_package(package_buf, package_buf_len, &cmd, &src_id,&target_id, &src_device_type, &src_device_sub_type, buf, &buf_len);
 				if(!((ret == RET_SUCCESS) && (cmd == ACTIVATION_ALL_TAG_CMD) && \
-					(src_device_type == ANCHOR) && (src_device_sub_type == MAIN_ANCHOR) && (buf_len == 37) && (g_uwb_rg_ssi >= -92.0)))
+					(src_device_type == ANCHOR) && (src_device_sub_type == MAIN_ANCHOR) && (buf_len == 48) && (g_uwb_rg_ssi >= -92.0)))
 				{
 					state = 0;
-					DBG_PRINT("main anchor actived rcv failed1: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
+					DBG_ERR_PRINT("main anchor actived rcv failed1: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
 												ret_type_str[ret],
 												dm_comm_type_str[cmd],
 												target_id,src_id,
@@ -1535,6 +1677,11 @@ ret_t tag_wait_activation(void)
 							anchor_test_ranging();
 						}				
 					}
+					else if(((ret == RET_SUCCESS) && (cmd == AUTO_CAL_ANT) &&\
+						(src_device_type == ANCHOR) && (src_device_sub_type == MAIN_ANCHOR) && (buf_len == 3)))
+					{
+						auto_cal_slave_ant(buf);		
+					}								
 
 												
 				}
@@ -1547,10 +1694,15 @@ ret_t tag_wait_activation(void)
 					g_locate_net_info.anchor_position[2] = *(double*)&buf[24];
 					g_locate_net_info.on_left = buf[32];
 					memcpy((u8*)&g_locate_net_info.main_anchor_h, &buf[33], 4);
+					memcpy((u8*)&g_locate_net_info.max_allow_tag_num, &buf[37], 2);
+					memcpy((u8*)&g_locate_net_info.dyn_slot_long, &buf[39], 2);
+					memcpy((u8*)&g_locate_net_info.ranging_slot_long, &buf[41], 2);
+					memcpy((u8*)&g_locate_net_info.register_timeout_us, &buf[43], 4);	
 					
 					state = 1;
-					
+									
 					DBG_PRINT("main anchor [%3d] actived suc, sn: %u ,RSSI:%2.2f\r\n", src_id, sn,g_uwb_rg_ssi);
+					DBG_RSSI_PRINT("main anchor [%3d] RSSI:%2.2f\r\n", src_id, g_uwb_rg_ssi);
 					
 				}
 				
@@ -1563,9 +1715,9 @@ ret_t tag_wait_activation(void)
 				{ 
 					state = 0;
 					
-					DBG_PRINT("sub anchor active is failed0! ret=%s\r\n",ret_type_str[ret]);
+					DBG_ERR_PRINT("sub anchor active is failed0! ret=%s\r\n",ret_type_str[ret]);
 					if(g_locate_net_info.main_anchor_id == 0)
-						DBG_PRINT("sub anchor active is failed0! ret=%s\r\n",ret_type_str[ret]);
+						DBG_ERR_PRINT("sub anchor active is failed0! ret=%s\r\n",ret_type_str[ret]);
 					
 					continue;
 				}	
@@ -1576,7 +1728,7 @@ ret_t tag_wait_activation(void)
 					(buf_len == 28) && (g_uwb_rg_ssi >= -92.0)))
 				{
 					if(g_locate_net_info.main_anchor_id == 0)
-						DBG_PRINT("sub anchor [%3d] actived failed1,%1d,%1d,%1d,%1d,%3d\r\n", src_id,ret,cmd,src_device_type,src_device_sub_type,buf_len);
+						DBG_ERR_PRINT("sub anchor [%3d] actived failed1,%1d,%1d,%1d,%1d,%3d\r\n", src_id,ret,cmd,src_device_type,src_device_sub_type,buf_len);
 					state = 0;
 				}
 				else
@@ -1586,8 +1738,16 @@ ret_t tag_wait_activation(void)
 					g_locate_net_info.anchor_position[4] = *(double*)&buf[8]; 
 					g_locate_net_info.anchor_position[5] = *(double*)&buf[16];
 					memcpy((u8*)&g_locate_net_info.sub_anchor_h, &buf[24], 4);
-					
+
+					DBG_PRINT("locate_net_info:%u,%u,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%u,%u,%u,%u,%u\r\n", g_locate_net_info.main_anchor_id,g_locate_net_info.sub_anchor_id, \
+						g_locate_net_info.anchor_position[0],g_locate_net_info.anchor_position[1],g_locate_net_info.anchor_position[2], g_locate_net_info.main_anchor_h, \
+						g_locate_net_info.anchor_position[3], g_locate_net_info.anchor_position[4], g_locate_net_info.anchor_position[5], g_locate_net_info.sub_anchor_h,
+						g_locate_net_info.on_left,g_locate_net_info.max_allow_tag_num, g_locate_net_info.dyn_slot_long, g_locate_net_info.ranging_slot_long, \
+					  g_locate_net_info.register_timeout_us);					
+				
 					DBG_PRINT("sub anchor [%3d] actived suc, RSSI:%2.2f\r\n", src_id,g_uwb_rg_ssi);
+					DBG_RSSI_PRINT("sub anchor [%3d] RSSI:%2.2f\r\n", src_id, g_uwb_rg_ssi);
+
 					
 					ret = RET_SUCCESS;
 					goto end;
@@ -1606,8 +1766,6 @@ end:
 }
 
 
-
-
 ret_t m_wait_tag_register(void)
 {	
 		u8 package_buf[PACKAGE_BUF_SIZE];
@@ -1616,14 +1774,14 @@ ret_t m_wait_tag_register(void)
 		u8 buf3[BUF_SIZE] = {0};
 		u16 buf_len, data_len;
 		u16 package_buf_len;
-		u8 dynamic_slot;
+		u8 dynamic_slot, surplus_dynamic_slot;
 		u16 target_id;
 		u16 src_id;
 		u16 id;
 		u8 src_device_type;
 		u8 src_device_sub_type; 
 		u8 cmd;
-		u8 cnt;
+		u8 cnt, recv_cnt;
 		u8 temp;
 		u32 time_start, time_end, nus, timeout, offset_time;
 		u32 time_start0, time_end0, nus0, timeout0;
@@ -1631,6 +1789,7 @@ ret_t m_wait_tag_register(void)
 		u32 time_start2, time_end2, nus2, timeout2;
 		u32 time_start3, time_end3, nus3, timeout3;
 		u32 time;
+		u32 max_tag_register_timeout_us; //最大允许标签情况下，总共需要的注册时间
 		u16 tag_wait_time_ms;
 		u16 confl_slot_num; //冲突时隙个数
 		u16 free_slot_num; //空闲时隙个数
@@ -1638,24 +1797,27 @@ ret_t m_wait_tag_register(void)
 		u16 ack_success_frame_num;
 		u8 num, i, j;
 		u32 delay_tx_time;
+		u32 slot_forecast_cnt;
 		ret_t ret = RET_SUCCESS;
 
 		success_recv_total_cnt = 0;
 		target_id = 0xffff;
-		dynamic_slot = MAX_DYNAMIC_SLOT_FRAME;
+		dynamic_slot = g_device_config.max_allow_tag_num;
+
+		delay_us(100);
 		dwt_forcetrxoff();
-		dwt_rxreset();
+		dwt_rxreset();		
 
 		time_start1 = get_cur_time();
-	//	for(cnt=0; cnt<MAX_DYNAMIC_SLOT_FRAME_SEND_CNT; cnt++)
 		while(1)
 		{
-				//DBG_PRINT("cnt is %d\r\n", cnt);
+				cnt++;
 				time_end1 = get_cur_time();
 				nus1 = get_count_time(time_start1, time_end1);
-				if(nus1 > ALL_TAG_REGISTER_TIMEOUT)
+		//		if(nus1 > ALL_TAG_REGISTER_TIMEOUT)
+				if(nus1 > g_register_timeout_us)
 				{				
-					DBG_PRINT("MA:tag register all done with timeout! %d/%d(unit:1us) \r\n",nus1,ALL_TAG_REGISTER_TIMEOUT);
+					DBG_PRINT("MA:tag register all done with timeout! %d/%d(unit:1us) \r\n",nus1,g_register_timeout_us);
 					if(success_recv_total_cnt > 0)
 					{
 						ret = RET_SUCCESS;
@@ -1670,6 +1832,7 @@ ret_t m_wait_tag_register(void)
 		
 				 //1.广播动态时隙帧	
 				delay_us(50);//暂停50us，等待标签准备好接受
+		//		delay_us(100);
 				buf[0] = dynamic_slot;
 				ret = make_package(DYNAMIC_SLOT_ALLOCATION_CMD, Flash_Device_ID, target_id, ANCHOR, MAIN_ANCHOR, buf, 1, package_buf, &package_buf_len);
 				if(ret != RET_SUCCESS)
@@ -1682,7 +1845,7 @@ ret_t m_wait_tag_register(void)
 				if(ret != RET_SUCCESS)
 				{
 				
-					DBG_PRINT("MA:dynamic slot frame sent fail,ret= %s ,sid=%d , tid=%d \r\n", ret_type_str[ret],Flash_Device_ID,target_id);
+					DBG_ERR_PRINT("MA:dynamic slot frame sent fail,ret= %s ,sid=%d , tid=%d \r\n", ret_type_str[ret],Flash_Device_ID,target_id);
 					continue;
 				}
 
@@ -1699,8 +1862,10 @@ ret_t m_wait_tag_register(void)
 				nus = g_device_config.dyn_slot_long * dynamic_slot; 
 				timeout = (nus/100) * DW1000_100US_TIMER_CNT; //dm1000每0x618000次计数大概是100us
 
+				recv_cnt = 0;
 				while(1)
-				{		
+				{	
+					recv_cnt++;
 					time_end = dwt_readsystimestamphi32();
 					if(time_end >= time_start)
 					{
@@ -1715,16 +1880,24 @@ ret_t m_wait_tag_register(void)
 					{
 						DBG_PRINT("MA:tag register single done with timeout! %d/%d(unit:4.006ns) \r\n",offset_time,timeout);
 						break; //动态时隙时间完毕
-					} 
-
-					cnt++;
+					} 				
 					
 					time = (timeout - offset_time)/DW1000_100US_TIMER_CNT;
 					time = time*100;
 
 					memset(package_buf, 0, PACKAGE_BUF_SIZE);
-					ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, time);
-					if(ret == RECV_HIT)
+
+					if(recv_cnt == 1)
+					{						
+						ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_DOUBLE_RECV, 0, time);
+					}
+					else
+					{
+						ret = dm9000_recv_data(package_buf, &package_buf_len, NO_OPEN_RECV, 0, time);
+					}
+
+				//	ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, time);
+					if(ret == RECV_DATA_ERR)
 					{
 						confl_slot_num++;
 						DBG_PRINT("MA: tag register data hit! cnt=%d, confl_slot_num=%d\r\n",cnt,confl_slot_num);
@@ -1737,7 +1910,7 @@ ret_t m_wait_tag_register(void)
 							(src_device_type == TAG) && (src_device_sub_type == TAG)&& \
 							(buf_len == 2)))
 						{
-							DBG_PRINT("MA tag register data rcv failed1: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
+							DBG_ERR_PRINT("MA tag register data rcv failed1: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
 											ret_type_str[ret],
 											dm_comm_type_str[cmd],
 											target_id,src_id,
@@ -1761,7 +1934,7 @@ ret_t m_wait_tag_register(void)
 
 					}			
 				}
-
+					
 				if(confl_slot_num == 0)
 				{	
 					if(success_recv_total_cnt == 0)
@@ -1820,11 +1993,10 @@ ret_t m_wait_tag_register(void)
 					ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT);			
 					if(ret != RET_SUCCESS)
 					{
-							DBG_PRINT("MA:ack data send failed-------------!\r\n");
+							DBG_ERR_PRINT("MA:ack data send failed-------------!\r\n");
 					}	
 
 				}
-
 							
 				DBG_PRINT("MA:ack data send suc,cnt=%d ,all_suc_cnt:%d,single_suc_cnt:%d,confl_slot_cnt:%d-------------!\r\n",cnt,success_recv_total_cnt,success_frame_num,confl_slot_num);
 				
@@ -1843,6 +2015,7 @@ ret_t m_wait_tag_register(void)
 					
 		
 end:
+
 		DBG_PRINT("MA:register exit,cnt:%d, dynamic_slot: %d, success_recv_total_cnt: %d\r\n",cnt, dynamic_slot,success_recv_total_cnt);
 
 	return ret;
@@ -1880,6 +2053,7 @@ ret_t tag_register(void)
 		u8 i = 0;
 		u8 num = 0;
 		u8 cnt = 0;
+		u16 cycle_cnt = 0;
 
 		dwt_forcetrxoff();
 		dwt_rxreset();
@@ -1888,7 +2062,7 @@ ret_t tag_register(void)
 		{
 			time_end = get_cur_time();
 			nus = get_count_time(time_start, time_end);
-			if(nus >= ALL_TAG_REGISTER_TIMEOUT)
+			if(nus >= g_locate_net_info.register_timeout_us)
 			{	
 				ret = RET_FAILED;
 				goto end;
@@ -1896,13 +2070,13 @@ ret_t tag_register(void)
 
 
 			//1.接收主基站发送的动态时隙帧
-			if((ALL_TAG_REGISTER_TIMEOUT - nus) > 40000)
+			if((g_locate_net_info.register_timeout_us - nus) > 40000)
 			{
 					time_out = 40000;
 			}
 			else
 			{
-					time_out = (ALL_TAG_REGISTER_TIMEOUT - nus);
+					time_out = (g_locate_net_info.register_timeout_us - nus);
 			}
 
 			memset(package_buf, 0, PACKAGE_BUF_SIZE);
@@ -1927,17 +2101,26 @@ ret_t tag_register(void)
 			//2.向主基站发送注册帧
 			cur_dw1000_time = dwt_readsystimestamphi32();	//获取本轮动态时隙开始时间	 	
 			dynamic_slot = buf[0];
-			nus0 = (dynamic_slot * g_device_config.dyn_slot_long); //本轮动态时隙结束的时间
+			nus0 = (dynamic_slot * g_locate_net_info.dyn_slot_long); //本轮动态时隙结束的时间
 			delay_rx_time = cur_dw1000_time + (nus0/100) * DW1000_100US_TIMER_CNT;
 
-			//随机选择时隙，并等待时隙到达
-			srand(cur_dw1000_time + Flash_Device_ID);
-			slot = rand() % dynamic_slot;
-			nus1 = (slot * g_device_config.dyn_slot_long + 300); //300表示等待时隙偏移300us后(让主基站先准备好接受)，标签才发送注册帧
+			//选择时隙
+			if(cycle_cnt == 0)
+			{
+				slot = Flash_Device_ID % g_locate_net_info.max_allow_tag_num;
+			}
+			else
+			{
+				//随机选择时隙，并等待时隙到达
+				srand(cur_dw1000_time + Flash_Device_ID);
+				slot = rand() % dynamic_slot;
+			}
+			cycle_cnt++;
+			nus1 = (slot * g_locate_net_info.dyn_slot_long + 300); //300表示等待时隙偏移300us后(让主基站先准备好接受)，标签才发送注册帧
 			delay_tx_time = cur_dw1000_time + (nus1/100) * DW1000_100US_TIMER_CNT; //dm1000每0x618000次计数大概是100us。
  			
 			cur_time = get_cur_time();
-			tag_wait_time_us = get_count_time(g_last_tag_position_time, cur_time)  ; 
+			tag_wait_time_us = get_count_time(g_last_tag_position_time, cur_time); 
 			tag_wait_time_ms = tag_wait_time_us/1000;
 			buf[0] = tag_wait_time_ms >> 8;
 			buf[1] = tag_wait_time_ms & 0xff;
@@ -2130,7 +2313,7 @@ ret_t m_slot_allocation(void)
 			if(ret != RET_SUCCESS)
 			{
 				
-				DBG_PRINT("MA:slot allocation data send failed-------------!\r\n");
+				DBG_ERR_PRINT("MA:slot allocation data send failed-------------!\r\n");
 			} 
 		
 			num--;
@@ -2205,7 +2388,7 @@ ret_t tag_recv_slot_allocation(u8 *slot)
 		ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, timeout);
 		if(ret != RET_SUCCESS)
 		{
-			DBG_PRINT("tag slot single failed(data rcv failed): %d\r\n", ret);
+			DBG_ERR_PRINT("tag slot single failed(data rcv failed): %d\r\n", ret);
 			continue;
 		}
 	
@@ -2220,7 +2403,7 @@ ret_t tag_recv_slot_allocation(u8 *slot)
 				slot_num = buf[0]; 
 				time = slot_num* g_device_config.dyn_slot_long + TAG_WAIT_SLOT_TIMEOUT;
 				time_start = get_cur_time(); //最后一次收到主基站动态时隙帧的时间
-				DBG_PRINT("tag slot single failed(data parse failed0): %d,%d,%d,%d,%d,%d,%d\r\n", ret,cmd,target_id,src_id,src_device_type,src_device_sub_type,buf_len);
+				DBG_ERR_PRINT("tag slot single failed(data parse failed0): %d,%d,%d,%d,%d,%d,%d\r\n", ret,cmd,target_id,src_id,src_device_type,src_device_sub_type,buf_len);
 				continue;
 		}
 	
@@ -2268,8 +2451,7 @@ end:
 }
 
 
-#if 0
-//0
+
 void test_position(void)
 {
 
@@ -2292,26 +2474,26 @@ void test_position(void)
 
 
 	//定位解算
-	pcg->latitude = 30.57477812;
-	pcg->longitude = 104.05835120;
-	pcg->height = 512.99;
+	pcg->latitude = 36.454471;
+	pcg->longitude = 117.815122;
+	pcg->height = 379.967951;
 	WGSToECEF(pcg, pcc);
 	a.x = pcc->x;
 	a.y = pcc->y;
 	a.z = pcc->z;	
 	
 						
-	pcg->latitude = 30.57477677;
-	pcg->longitude = 104.05844831;
-	pcg->height = 513.019; 				
+	pcg->latitude = 36.45591571;
+	pcg->longitude = 117.815537;
+	pcg->height = 375.7159912; 				
 	WGSToECEF(pcg, pcc);
 	b.x = pcc->x;
 	b.y = pcc->y;
 	b.z = pcc->z;
 	
-	pcg->latitude = 30.57473120;
-	pcg->longitude = 104.05840174;
-	pcg->height = 511.495; 								
+	pcg->latitude = 36.455757;
+	pcg->longitude = 117.815429;
+	pcg->height = 374.324616; 								
 	WGSToECEF(pcg, pcc);
 	c.x = pcc->x;
 	c.y = pcc->y;
@@ -2319,9 +2501,9 @@ void test_position(void)
 	
 	
 	//a <-> c
-	center->latitude = 30.57477812;
-	center->longitude = 104.05835120;
-	center->height = 512.99;
+	center->latitude = 36.454471;
+	center->longitude = 117.815122;
+	center->height = 379.967951;
 	ECEFToENU((PECEF)&c, center, pct);							
 	d1 = sqrt(pow(pct->easting,2) + pow(pct->northing,2) + pow(pct->upping,2)); 
 	temp.easting = pct->easting;
@@ -2330,272 +2512,17 @@ void test_position(void)
      	
 	
 	//c <-> b
-	center->latitude =30.57473120;
-	center->longitude = 104.05840174;
-	center->height = 511.495;	
+	center->latitude =36.455757;
+	center->longitude = 117.815429;
+	center->height = 374.324616;
 	ECEFToENU((PECEF)&b, center, pct);
 	d2 = sqrt(pow(pct->easting,2) + pow(pct->northing,2) + pow(pct->upping,2)); 
 
 	//a <-> b
-	center->latitude = 30.57477812;
-	center->longitude = 104.05835120;
-	center->height = 512.99;
-	ECEFToENU((PECEF)&b, center, pct);
-	d3 = sqrt(pow(pct->easting,2) + pow(pct->northing,2) + pow(pct->upping,2)); 
-	DBG_PRINT("----------d1: %lf, d2: %lf, d3: %lf m\r\n", d1,d2,d3);
-	
-	negative_rotate3(pct->easting, pct->northing, pct->upping, temp.easting, temp.northing, temp.upping, &x, &y, &z);
-	tag_h = z;
+	center->latitude = 36.454471;
+	center->longitude = 117.815122;
+	center->height = 379.967951;
 
-
-//	d1= 7.10;
-//	d2= 6.78;
-	//tag_h = -1.7;
-
-	
-	rett = CalcPosition_enu(d1,pct->easting,pct->northing,pct->upping,d2,tag_h,0,clua_x_y);
-
-	if(rett < 0)
-	{
-		DBG_PRINT("----------pos invalid value\r\n");
-	}
-	else
-	{ 							
-		//坐标滤波
-		pct->easting = clua_x_y[0];
-		pct->northing = clua_x_y[1];
-		pct->upping = clua_x_y[2];
-		ENUToECEF(pcc, center, pct);
-		ECEFToWGS(pcg, pcc);
-		
-	//	pcg->latitude = KalmanFilter(pcg->latitude,g_device_config.kalman_q,g_device_config.kalman_r,0); //卡尔曼滤波
-	//	pcg->longitude = KalmanFilter(pcg->longitude,g_device_config.kalman_q,g_device_config.kalman_r,1); 
-	//	pcg->height = KalmanFilter(pcg->height,g_device_config.kalman_q,g_device_config.kalman_r,2); 
-		
-		g_pos_info.tag_position[0] = pcg->latitude;
-		g_pos_info.tag_position[1] = pcg->longitude;
-		g_pos_info.tag_position[2] = pcg->height;
-	
-
-		DBG_PRINT("----------latitude: %lf, longitude: %lf, height: %lf m\r\n", g_pos_info.tag_position[0], g_pos_info.tag_position[1], g_pos_info.tag_position[2]);								
-	}
-
-
-	GLOBAL_FREE(pcc);
-	GLOBAL_FREE(center);
-	GLOBAL_FREE(pcg);
-	GLOBAL_FREE(pct);
-
-	delay_ms(2000);
-
-				
-
-}
-
-#endif
-
-
-
-#if 0
-//1
-void test_position(void)
-{
-
-	PECEF pcc;
-	PWGS center, pcg;
-	PENU pct;
-	int rett;
-	double x,y,z;
-	double tag_h;
-	double d1,d2,d3;
-	ECEF a, b, c;
-	ENU temp;
-	double clua_x_y[4];
-	
-	
-	pcc = (PECEF)GLOBAL_MALLOC(sizeof(ECEF));
-	center = (PWGS)GLOBAL_MALLOC(sizeof(WGS));
-	pcg = (PWGS)GLOBAL_MALLOC(sizeof(WGS));
-	pct = (PENU)GLOBAL_MALLOC(sizeof(ENU));
-
-
-	//定位解算
-	pcg->latitude = 30.57493110;
-	pcg->longitude = 104.05791284;
-	pcg->height = 512.863;
-	WGSToECEF(pcg, pcc);
-	a.x = pcc->x;
-	a.y = pcc->y;
-	a.z = pcc->z;	
-	
-						
-	pcg->latitude = 30.57489152;
-	pcg->longitude = 104.05788480;
-	pcg->height = 512.966; 				
-	WGSToECEF(pcg, pcc);
-	b.x = pcc->x;
-	b.y = pcc->y;
-	b.z = pcc->z;
-	
-	pcg->latitude = 30.57492398;
-	pcg->longitude = 104.05786886;
-	pcg->height = 511.703; 								
-	WGSToECEF(pcg, pcc);
-	c.x = pcc->x;
-	c.y = pcc->y;
-	c.z = pcc->z;
-	
-	
-	//a <-> c
-	center->latitude = 30.57493110;
-	center->longitude = 104.05791284;
-	center->height = 512.863;
-	ECEFToENU((PECEF)&c, center, pct);							
-	d1 = sqrt(pow(pct->easting,2) + pow(pct->northing,2) + pow(pct->upping,2)); 
-	temp.easting = pct->easting;
-	temp.northing = pct->northing;
-	temp.upping = pct->upping;
-     	
-	
-	//c <-> b
-	center->latitude =30.57492398;
-	center->longitude = 104.05786886;
-	center->height = 511.703;	
-	ECEFToENU((PECEF)&b, center, pct);
-	d2 = sqrt(pow(pct->easting,2) + pow(pct->northing,2) + pow(pct->upping,2)); 
-
-	//a <-> b
-	center->latitude = 30.57493110;
-	center->longitude = 104.05791284;
-	center->height = 512.863;
-	ECEFToENU((PECEF)&b, center, pct);
-	d3 = sqrt(pow(pct->easting,2) + pow(pct->northing,2) + pow(pct->upping,2)); 
-	DBG_PRINT("----------d1: %lf, d2: %lf, d3: %lf m\r\n", d1,d2,d3);
-	
-	negative_rotate3(pct->easting, pct->northing, pct->upping, temp.easting, temp.northing, temp.upping, &x, &y, &z);
-	tag_h = z;
-
-
-	d1= 4.42;
-	d2= 3.77;
-	tag_h = -0.86;
-
-
-	
-	rett = CalcPosition_enu(d1,pct->easting,pct->northing,pct->upping,d2,tag_h,0,clua_x_y);
-
-	if(rett < 0)
-	{
-		DBG_PRINT("----------pos invalid value\r\n");
-	}
-	else
-	{ 							
-		//坐标滤波
-		pct->easting = clua_x_y[0];
-		pct->northing = clua_x_y[1];
-		pct->upping = clua_x_y[2];
-		ENUToECEF(pcc, center, pct);
-		ECEFToWGS(pcg, pcc);
-		
-	//	pcg->latitude = KalmanFilter(pcg->latitude,g_device_config.kalman_q,g_device_config.kalman_r,0); //卡尔曼滤波
-	//	pcg->longitude = KalmanFilter(pcg->longitude,g_device_config.kalman_q,g_device_config.kalman_r,1); 
-	//	pcg->height = KalmanFilter(pcg->height,g_device_config.kalman_q,g_device_config.kalman_r,2); 
-		
-		g_pos_info.tag_position[0] = pcg->latitude;
-		g_pos_info.tag_position[1] = pcg->longitude;
-		g_pos_info.tag_position[2] = pcg->height;
-	
-
-		DBG_PRINT("----------latitude: %lf, longitude: %lf, height: %lf m\r\n", g_pos_info.tag_position[0], g_pos_info.tag_position[1], g_pos_info.tag_position[2]);								
-	}
-
-
-	GLOBAL_FREE(pcc);
-	GLOBAL_FREE(center);
-	GLOBAL_FREE(pcg);
-	GLOBAL_FREE(pct);
-
-	delay_ms(2000);
-
-				
-
-}
-
-#endif
-
-
-#if 0
-//2
-void test_position(void)
-{
-
-	PECEF pcc;
-	PWGS center, pcg;
-	PENU pct;
-	int rett;
-	double x,y,z;
-	double tag_h;
-	double d1,d2,d3;
-	ECEF a, b, c;
-	ENU temp;
-	double clua_x_y[4];
-	
-	
-	pcc = (PECEF)GLOBAL_MALLOC(sizeof(ECEF));
-	center = (PWGS)GLOBAL_MALLOC(sizeof(WGS));
-	pcg = (PWGS)GLOBAL_MALLOC(sizeof(WGS));
-	pct = (PENU)GLOBAL_MALLOC(sizeof(ENU));
-
-
-	//定位解算
-	pcg->latitude = 30.57493125;
-	pcg->longitude = 104.05791217;
-	pcg->height = 512.903;
-	WGSToECEF(pcg, pcc);
-	a.x = pcc->x;
-	a.y = pcc->y;
-	a.z = pcc->z;	
-	
-						
-	pcg->latitude = 30.57485180;
-	pcg->longitude = 104.05785392;
-	pcg->height = 512.955; 				
-	WGSToECEF(pcg, pcc);
-	b.x = pcc->x;
-	b.y = pcc->y;
-	b.z = pcc->z;
-	
-	pcg->latitude = 30.57492565;
-	pcg->longitude = 104.05785617;
-	pcg->height = 512.055; 								
-	WGSToECEF(pcg, pcc);
-	c.x = pcc->x;
-	c.y = pcc->y;
-	c.z = pcc->z;
-	
-	
-	//a <-> c
-	center->latitude = 30.57493125;
-	center->longitude = 104.05791217;
-	center->height = 512.903;
-	ECEFToENU((PECEF)&c, center, pct);							
-	d1 = sqrt(pow(pct->easting,2) + pow(pct->northing,2) + pow(pct->upping,2)); 
-	temp.easting = pct->easting;
-	temp.northing = pct->northing;
-	temp.upping = pct->upping;
-     	
-	
-	//c <-> b
-	center->latitude =30.57492565;
-	center->longitude = 104.05785617;
-	center->height = 512.055;
-	ECEFToENU((PECEF)&b, center, pct);
-	d2 = sqrt(pow(pct->easting,2) + pow(pct->northing,2) + pow(pct->upping,2)); 
-
-	//a <-> b
-	center->latitude = 30.57493125;
-	center->longitude = 104.05791217;
-	center->height = 512.903;
 
 	ECEFToENU((PECEF)&b, center, pct);
 	d3 = sqrt(pow(pct->easting,2) + pow(pct->northing,2) + pow(pct->upping,2)); 
@@ -2605,9 +2532,10 @@ void test_position(void)
 	tag_h = z;
 
 
-	//d1= 4.42;
-	//d2= 3.77;
-	//tag_h = -0.86;
+	//d1= 144.78;
+	//d2= 21.76;
+	//tag_h = -1.85;
+	
 
 	
 	rett = CalcPosition_enu(d1,pct->easting,pct->northing,pct->upping,d2,tag_h,0,clua_x_y);
@@ -2624,10 +2552,6 @@ void test_position(void)
 		pct->upping = clua_x_y[2];
 		ENUToECEF(pcc, center, pct);
 		ECEFToWGS(pcg, pcc);
-		
-	//	pcg->latitude = KalmanFilter(pcg->latitude,g_device_config.kalman_q,g_device_config.kalman_r,0); //卡尔曼滤波
-	//	pcg->longitude = KalmanFilter(pcg->longitude,g_device_config.kalman_q,g_device_config.kalman_r,1); 
-	//	pcg->height = KalmanFilter(pcg->height,g_device_config.kalman_q,g_device_config.kalman_r,2); 
 		
 		g_pos_info.tag_position[0] = pcg->latitude;
 		g_pos_info.tag_position[1] = pcg->longitude;
@@ -2649,135 +2573,8 @@ void test_position(void)
 
 }
 
-#endif
-
-#if 1
-//3
-void test_position(void)
-{
-
-	PECEF pcc;
-	PWGS center, pcg;
-	PENU pct;
-	int rett;
-	double x,y,z;
-	double tag_h;
-	double d1,d2,d3;
-	ECEF a, b, c;
-	ENU temp;
-	double clua_x_y[4];
-	
-	
-	pcc = (PECEF)GLOBAL_MALLOC(sizeof(ECEF));
-	center = (PWGS)GLOBAL_MALLOC(sizeof(WGS));
-	pcg = (PWGS)GLOBAL_MALLOC(sizeof(WGS));
-	pct = (PENU)GLOBAL_MALLOC(sizeof(ENU));
 
 
-	//定位解算
-	pcg->latitude = 30.572123;
-	pcg->longitude = 104.056049;
-	pcg->height = 474.364;
-	WGSToECEF(pcg, pcc);
-	a.x = pcc->x;
-	a.y = pcc->y;
-	a.z = pcc->z;	
-	
-						
-	pcg->latitude = 30.570365;
-	pcg->longitude = 104.055617;
-	pcg->height = 473.988; 				
-	WGSToECEF(pcg, pcc);
-	b.x = pcc->x;
-	b.y = pcc->y;
-	b.z = pcc->z;
-	
-	pcg->latitude = 30.57492565;
-	pcg->longitude = 104.05785617;
-	pcg->height = 512.055; 								
-	WGSToECEF(pcg, pcc);
-	c.x = pcc->x;
-	c.y = pcc->y;
-	c.z = pcc->z;
-	
-	
-	//a <-> c
-	center->latitude = 30.57493125;
-	center->longitude = 104.05791217;
-	center->height = 512.903;
-	ECEFToENU((PECEF)&c, center, pct);							
-	d1 = sqrt(pow(pct->easting,2) + pow(pct->northing,2) + pow(pct->upping,2)); 
-	temp.easting = pct->easting;
-	temp.northing = pct->northing;
-	temp.upping = pct->upping;
-     	
-	
-	//c <-> b
-	center->latitude =30.57492565;
-	center->longitude = 104.05785617;
-	center->height = 512.055;
-	ECEFToENU((PECEF)&b, center, pct);
-	d2 = sqrt(pow(pct->easting,2) + pow(pct->northing,2) + pow(pct->upping,2)); 
-
-	//a <-> b
-	center->latitude = 30.572123;
-	center->longitude = 104.056049;
-	center->height = 474.364;
-	
-
-	ECEFToENU((PECEF)&b, center, pct);
-	d3 = sqrt(pow(pct->easting,2) + pow(pct->northing,2) + pow(pct->upping,2)); 
-	DBG_PRINT("----------d1: %lf, d2: %lf, d3: %lf m\r\n", d1,d2,d3);
-
-	positive_rotate3(pct->easting, pct->northing, pct->upping, temp.easting, temp.northing, temp.upping, &x, &y, &z);
-	tag_h = z;
-
-
-	//d1= 4.42;
-	//d2= 3.77;
-	//tag_h = -0.86;
-
-	
-	rett = CalcPosition_enu(d1,pct->easting,pct->northing,pct->upping,d2,tag_h,0,clua_x_y);
-
-	if(rett < 0)
-	{
-		DBG_PRINT("----------pos invalid value\r\n");
-	}
-	else
-	{ 							
-		//坐标滤波
-		pct->easting = clua_x_y[0];
-		pct->northing = clua_x_y[1];
-		pct->upping = clua_x_y[2];
-		ENUToECEF(pcc, center, pct);
-		ECEFToWGS(pcg, pcc);
-		
-	//	pcg->latitude = KalmanFilter(pcg->latitude,g_device_config.kalman_q,g_device_config.kalman_r,0); //卡尔曼滤波
-	//	pcg->longitude = KalmanFilter(pcg->longitude,g_device_config.kalman_q,g_device_config.kalman_r,1); 
-	//	pcg->height = KalmanFilter(pcg->height,g_device_config.kalman_q,g_device_config.kalman_r,2); 
-		
-		g_pos_info.tag_position[0] = pcg->latitude;
-		g_pos_info.tag_position[1] = pcg->longitude;
-		g_pos_info.tag_position[2] = pcg->height;
-	
-
-		DBG_PRINT("----------latitude: %lf, longitude: %lf, height: %lf m\r\n", g_pos_info.tag_position[0], g_pos_info.tag_position[1], g_pos_info.tag_position[2]);								
-	}
-
-
-	GLOBAL_FREE(pcc);
-	GLOBAL_FREE(center);
-	GLOBAL_FREE(pcg);
-	GLOBAL_FREE(pct);
-
-	delay_ms(2000);
-
-				
-
-}
-
-#endif
 
 
 double calc_dist(double a_lat, double a_long, double a_hight, double b_lat, double b_long, double b_hight){
@@ -2866,12 +2663,14 @@ ret_t tag_ranging(u8 tag_slot)
 		double main_rssi, sub_rssi;
 		ret_t ret = RET_FAILED;
 		static u32 num = 0;
+		float t2wall_dist_diff;
+		rcv_signal_quality_t tag_main_t4_quality, tag_sub_t4_quality, main_t2_quality, main_t6_quality, sub_t2_quality, sub_t6_quality;
 
 		//tag_slot = 3;
 		time_start = get_cur_time(); 
 		
 		//1.等待测距时隙到达
-		time = (tag_slot * g_device_config.ranging_slot_long+300);
+		time = (tag_slot * g_locate_net_info.ranging_slot_long+300);
 		cur_dw1000_time = dwt_readsystimestamphi32();
 		delay_tx_time = cur_dw1000_time + (time/100) * DW1000_100US_TIMER_CNT; //dm1000每0x618000次计数大概是100us。
 		
@@ -2889,7 +2688,7 @@ ret_t tag_ranging(u8 tag_slot)
 									goto end;
 								}
 								g_get_tx_timestamp_flag = 1;
-								//ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT);	
+	
 								ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_DELAYED, delay_tx_time, (time + TX_NORMAL_TIMEOUT));	
 								if(ret != RET_SUCCESS)
 								{
@@ -2912,7 +2711,8 @@ ret_t tag_ranging(u8 tag_slot)
 						{	
 								g_get_rx_timestamp_flag = 1;
 								
-								ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, DM9000_RX_TIMEOUT);
+								//ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, DM9000_RX_TIMEOUT);
+								ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_DOUBLE_RECV, 0, DM9000_RX_TIMEOUT);
 								if(ret != RET_SUCCESS)
 								{
 									DBG_ERR_PRINT("1. tag range m_resp rcv failed0: %s\r\n", ret_type_str[ret]);
@@ -2923,7 +2723,7 @@ ret_t tag_ranging(u8 tag_slot)
 								if(!((ret == RET_SUCCESS) && (cmd == RESP) && \
 									(target_id == Flash_Device_ID) && (src_id == g_locate_net_info.main_anchor_id)&& \
 									(src_device_type == ANCHOR) && (src_device_sub_type == MAIN_ANCHOR)&& \
-									(buf_len == 4)))
+									(buf_len == 16)))
 								{
 									DBG_ERR_PRINT("1. tag range m_resp rcv failed1: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
 																ret_type_str[ret],
@@ -2935,7 +2735,9 @@ ret_t tag_ranging(u8 tag_slot)
 								}
 
 								Time_ts[1] = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];//获得主基站POLL接收时间T2	
-								Time_ts[3] = g_rx_timestamp;	//获得接受到主基站RESP时间T4												
+								main_t2_quality = *(rcv_signal_quality_t*)&buf[4];
+								Time_ts[3] = g_rx_timestamp;	//获得接受到主基站RESP时间T4
+								tag_main_t4_quality = g_rcv_signal_quality; 
 								state=2;
 								DBG_PRINT("1. m[%d] resp rcv suc,stamp1:%u stamp3:%u\r\n",g_locate_net_info.main_anchor_id,Time_ts[1],Time_ts[3]);
 					
@@ -2947,7 +2749,8 @@ ret_t tag_ranging(u8 tag_slot)
 						case 2:
 						{	
 								g_get_rx_timestamp_flag = 1;
-								ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, DM9000_RX_TIMEOUT);
+								//ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, DM9000_RX_TIMEOUT);
+								ret = dm9000_recv_data(package_buf, &package_buf_len, NO_OPEN_RECV, 0, DM9000_RX_TIMEOUT);
 								if(ret != RET_SUCCESS)
 								{
 									DBG_ERR_PRINT("2. tag range s_resp rcv failed0: %s\r\n", ret_type_str[ret]);
@@ -2958,7 +2761,7 @@ ret_t tag_ranging(u8 tag_slot)
 								if(!((ret == RET_SUCCESS) && (cmd == RESP) && \
 									(target_id == Flash_Device_ID) && (src_id == g_locate_net_info.sub_anchor_id)&& \
 									(src_device_type == ANCHOR) && (src_device_sub_type == SUB_ANCHOR)&& \
-									(buf_len == 4)))
+									(buf_len == 16)))
 								{
 									DBG_ERR_PRINT("2. tag range s_resp rcv failed1: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
 																ret_type_str[ret],
@@ -2970,7 +2773,9 @@ ret_t tag_ranging(u8 tag_slot)
 								}
 							
 								Time_ts2[1] = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];//获得从基站POLL接收时间T2	
-								Time_ts2[3] = g_rx_timestamp;//获得接受到从基站RESP时间T4														
+								sub_t2_quality = *(rcv_signal_quality_t*)&buf[4];
+								Time_ts2[3] = g_rx_timestamp;//获得接受到从基站RESP时间T4	
+								tag_sub_t4_quality = g_rcv_signal_quality; 
 								state=3;
 								DBG_PRINT("2. s[%d] resp rcv suc,stamp1:%u stamp3:%u\r\n",g_locate_net_info.sub_anchor_id,Time_ts2[1],Time_ts2[3]);
 					
@@ -2979,14 +2784,14 @@ ret_t tag_ranging(u8 tag_slot)
 						}
 
 						//3.发送FINAL帧
-		        		case 3:
+		        case 3:
 						{
 								ret = make_package(FINAL, Flash_Device_ID, g_locate_net_info.main_anchor_id, TAG, TAG, NULL, 0, package_buf, &package_buf_len);
 								if(ret != RET_SUCCESS)
 								{
 									goto end;
 								}
-								delay_us(50);
+							//	delay_us(50);
 								g_get_tx_timestamp_flag = 1;
 								ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT);	
 								if(ret != RET_SUCCESS)
@@ -3007,21 +2812,23 @@ ret_t tag_ranging(u8 tag_slot)
 						//4.接受主基站ACK帧
 						case 4:
 						{
-								g_enable_get_power = 1;
-								ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, DM9000_RX_TIMEOUT);
+							//	g_enable_get_power = 1;
+							
+								//ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, DM9000_RX_TIMEOUT);
+								ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_DOUBLE_RECV, 0, DM9000_RX_TIMEOUT);
 								if(ret != RET_SUCCESS)
 								{
-									g_enable_get_power = 0;
+							//		g_enable_get_power = 0;
 									DBG_ERR_PRINT("4. tag range m_ack rcv failed0: %s\r\n", ret_type_str[ret]);
 									goto end;
 								}
 								main_rssi = g_uwb_rg_ssi;
-								g_enable_get_power = 0;
+							//	g_enable_get_power = 0;
 								ret = parsing_package(package_buf, package_buf_len, &cmd, &src_id,&target_id, &src_device_type, &src_device_sub_type, buf, &buf_len);
 								if(!((ret == RET_SUCCESS) && (cmd == ACK) && \
 									(target_id == Flash_Device_ID) && (src_id == g_locate_net_info.main_anchor_id)&& \
 									(src_device_type == ANCHOR) && (src_device_sub_type == MAIN_ANCHOR)&& \
-									(buf_len == 8)))
+									(buf_len == 20)))
 								{
 									DBG_ERR_PRINT("4. tag range m_ack rcv failed1: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
 																ret_type_str[ret],
@@ -3033,7 +2840,8 @@ ret_t tag_ranging(u8 tag_slot)
 								}
 								
 								Time_ts[2] = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];//获得主基站RESP帧发送时间T3
-								Time_ts[5] = (buf[4] << 24) | (buf[5] << 16) | (buf[6] << 8) | buf[7];//获得主基站RESP帧发送时间T6	
+								Time_ts[5] = (buf[4] << 24) | (buf[5] << 16) | (buf[6] << 8) | buf[7];//获得主基站RESP接受时间T6
+								main_t6_quality = *(rcv_signal_quality_t*)&buf[8];
 								state=5;
 								DBG_PRINT("4. m[%d] ack rcv suc,stamp2:%u stamp5:%u\r\n",g_locate_net_info.main_anchor_id,Time_ts[2],Time_ts[5]);
 					
@@ -3044,21 +2852,22 @@ ret_t tag_ranging(u8 tag_slot)
 						case 5:						
 						{
 								//printf("%d\n",SYS_Calculate_ACTIVE_FLAG);
-								g_enable_get_power = 1;
-								ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, DM9000_RX_TIMEOUT);
+							//	g_enable_get_power = 1;
+							//	ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, DM9000_RX_TIMEOUT);
+							ret = dm9000_recv_data(package_buf, &package_buf_len, NO_OPEN_RECV, 0, DM9000_RX_TIMEOUT);
 								if(ret != RET_SUCCESS)
 								{
-									g_enable_get_power = 0;
+							//		g_enable_get_power = 0;
 									DBG_ERR_PRINT("5. tag range s_ack rcv failed0: %s\r\n", ret_type_str[ret]);
 									goto end;
 								}
 								sub_rssi = g_uwb_rg_ssi;
-								g_enable_get_power = 0;
+							//	g_enable_get_power = 0;
 								ret = parsing_package(package_buf, package_buf_len, &cmd, &src_id,&target_id, &src_device_type, &src_device_sub_type, buf, &buf_len);
 								if(!((ret == RET_SUCCESS) && (cmd == ACK) && \
 									(target_id == Flash_Device_ID) && (src_id == g_locate_net_info.sub_anchor_id)&& \
 									(src_device_type == ANCHOR) && (src_device_sub_type == SUB_ANCHOR)&& \
-									(buf_len == 8)))
+									(buf_len == 20)))
 								{
 									DBG_ERR_PRINT("4. tag range s_ack rcv failed1: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
 																ret_type_str[ret],
@@ -3070,7 +2879,8 @@ ret_t tag_ranging(u8 tag_slot)
 								}
 								
 								Time_ts2[2] = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];//获得从基站RESP帧发送时间T3
-								Time_ts2[5] = (buf[4] << 24) | (buf[5] << 16) | (buf[6] << 8) | buf[7];//获得从基站RESP帧发送时间T6	
+								Time_ts2[5] = (buf[4] << 24) | (buf[5] << 16) | (buf[6] << 8) | buf[7];//获得从基站RESP帧接受时间T6	
+								sub_t6_quality = *(rcv_signal_quality_t*)&buf[8];
 								state=6;					
 
 								time_end = get_cur_time();
@@ -3090,6 +2900,7 @@ ret_t tag_ranging(u8 tag_slot)
 								double Ra, Rb, Da, Db;
 		            uint64 tof_dtu;
 								double tof;             //飞行时间
+								double main_tprop_diff, sub_tprop_diff; //双向测距计时差异
 								double distance,dist;  //理论距离 ，估算距离
 								double t2ref_dist;
 								double d0,d1;
@@ -3103,9 +2914,8 @@ ret_t tag_ranging(u8 tag_slot)
 								PENU pct;
 								int rett;
 								double tag_h;
-								float hight; //标签相对基站的高度
-								
-				
+								float hight; //标签相对基站的高度								
+						
 
 								pcc = (PECEF)GLOBAL_MALLOC(sizeof(ECEF));
 								center = (PWGS)GLOBAL_MALLOC(sizeof(WGS));
@@ -3150,6 +2960,8 @@ ret_t tag_ranging(u8 tag_slot)
 									Db = (double)((0xffffffff - Time_ts[1]) + Time_ts[2] + 1);
 								}	
 
+								main_tprop_diff = (Ra - Db) - (Rb - Da);			
+
 #if 0
 								Ra = (double)(Time_ts[3] - Time_ts[0]);//Tround1 = T4 - T1  
 		            Rb = (double)(Time_ts[5] - Time_ts[2]);//Tround2 = T6 - T3 
@@ -3162,8 +2974,25 @@ ret_t tag_ranging(u8 tag_slot)
 								dist = distance - dwt_getrangebias(config.chan,(float)distance, config.prf);//距离减去矫正系数	
 								dis0 = dist*100;//dis 为单位为cm的距离		
 								
-								DBG_WARNING_PRINT("main:%u,%u,%u,%u,%u,%u,%10.0f,%10.0f,%10.0f,%10.0f,%ld,%lf,%lf,%lf,%lf\r\n", \
-									Time_ts[0],Time_ts[1],Time_ts[2],Time_ts[3],Time_ts[4],Time_ts[5],Ra,Rb,Da,Db,tof_dtu,tof,distance,dist,main_rssi);
+								DBG_RANGING_PRINT("main_rg_info:%d,%u,%u,%u,%u,%u,%u,%10.0f,%10.0f,%10.0f,%10.0f,%ld,%lf,%lf,%lf,%d,%d,%d,%2.2f,%d,%d,%d,%2.2f,%d,%d,%d,%2.2f,%10.0f\r\n", \
+									g_locate_net_info.main_anchor_id,Time_ts[0],Time_ts[1],Time_ts[2],Time_ts[3],Time_ts[4],Time_ts[5],Ra,Rb,Da,Db,tof_dtu,tof,distance,dist, \
+									main_t2_quality.rx_fp_power_diff,main_t2_quality.f1_noise_amp_diff,main_t2_quality.std_noise,main_t2_quality.rx_power, \
+								  tag_main_t4_quality.rx_fp_power_diff,tag_main_t4_quality.f1_noise_amp_diff,tag_main_t4_quality.std_noise,tag_main_t4_quality.rx_power, \
+								  main_t6_quality.rx_fp_power_diff,main_t6_quality.f1_noise_amp_diff,main_t6_quality.std_noise,main_t6_quality.rx_power,main_tprop_diff);
+
+								if(main_t2_quality.rx_fp_power_diff >= g_device_config.sig_qa_thr \
+									|| tag_main_t4_quality.rx_fp_power_diff >= g_device_config.sig_qa_thr \
+									|| main_t6_quality.rx_fp_power_diff >= g_device_config.sig_qa_thr
+									|| fabs(main_tprop_diff) > 600)
+								{
+									DBG_RANGING_PRINT("1.sig qa is too bad\r\n");
+									GLOBAL_FREE(pcc);
+									GLOBAL_FREE(center);
+									GLOBAL_FREE(pcg);
+									GLOBAL_FREE(pct);										
+									ret = RET_SUCCESS;
+									goto end;									
+								}									
 
 								if(Time_ts2[3] >= Time_ts2[0])
 								{
@@ -3201,6 +3030,7 @@ ret_t tag_ranging(u8 tag_slot)
 									Db = (double)((0xffffffff - Time_ts2[1]) + Time_ts2[2] + 1);
 								}	
 
+								sub_tprop_diff = (Ra - Db) - (Rb - Da);
 
 #if 0
 								Ra = (double)(Time_ts2[3] - Time_ts2[0]);//Tround1 = T4 - T1  
@@ -3215,13 +3045,29 @@ ret_t tag_ranging(u8 tag_slot)
 								dist = distance - dwt_getrangebias(config.chan,(float)distance, config.prf);//距离减去矫正系数	
 								dis1 = dist*100;//dis 为单位为cm的距离
 								
-								//DBG_WARNING_PRINT("sub:%lf,%lf,%lf,%lf,%ld,%lf,%lf,%lf\r\n", Ra,Rb,Da,Db,tof_dtu,tof,distance,dist);
-								DBG_WARNING_PRINT("sub:%u,%u,%u,%u,%u,%u,%10.0f,%10.0f,%10.0f,%10.0f,%ld,%lf,%lf,%lf,%lf\r\n", \
-									Time_ts2[0],Time_ts2[1],Time_ts2[2],Time_ts2[3],Time_ts2[4],Time_ts2[5],Ra,Rb,Da,Db,tof_dtu,tof,distance,dist,sub_rssi);
 
-								//距离低通滤波
-								//dis0 = LP(dis0,0);
-								//dis1 = LP(dis1,1);	
+								DBG_RANGING_PRINT("sub_rg_info:%d,%u,%u,%u,%u,%u,%u,%10.0f,%10.0f,%10.0f,%10.0f,%ld,%lf,%lf,%lf,%d,%d,%d,%2.2f,%d,%d,%d,%2.2f,%d,%d,%d,%2.2f,%10.0f\r\n", \
+									g_locate_net_info.sub_anchor_id,Time_ts2[0],Time_ts2[1],Time_ts2[2],Time_ts2[3],Time_ts2[4],Time_ts2[5],Ra,Rb,Da,Db,tof_dtu,tof,distance,dist, \
+									sub_t2_quality.rx_fp_power_diff,sub_t2_quality.f1_noise_amp_diff,sub_t2_quality.std_noise,sub_t2_quality.rx_power, \
+									tag_sub_t4_quality.rx_fp_power_diff,tag_sub_t4_quality.f1_noise_amp_diff,tag_sub_t4_quality.std_noise,tag_sub_t4_quality.rx_power, \
+									sub_t6_quality.rx_fp_power_diff,sub_t6_quality.f1_noise_amp_diff,sub_t6_quality.std_noise,sub_t6_quality.rx_power,sub_tprop_diff);
+
+								if(sub_t2_quality.rx_fp_power_diff >= g_device_config.sig_qa_thr \
+									|| tag_sub_t4_quality.rx_fp_power_diff >= g_device_config.sig_qa_thr \
+									|| sub_t6_quality.rx_fp_power_diff >= g_device_config.sig_qa_thr
+									|| fabs(sub_tprop_diff) > 600)
+								{
+									DBG_RANGING_PRINT("2.sig qa is too bad\r\n");
+									GLOBAL_FREE(pcc);
+									GLOBAL_FREE(center);
+									GLOBAL_FREE(pcg);
+									GLOBAL_FREE(pct);									
+									ret = RET_SUCCESS;
+									goto end;
+								}
+									
+									
+								//距离低通滤波	
 								d0 = dis0 / 100.0;
 								d1 = dis1 / 100.0;
 
@@ -3242,19 +3088,12 @@ ret_t tag_ranging(u8 tag_slot)
 								WGSToECEF(pcg, pcc);									
 								ECEFToENU(pcc, center, pct); //转换为东北天坐标
 
-								if(dis0 >= dis1)
-								{
-									hight = g_device_config.tag_h - g_locate_net_info.main_anchor_h;
-								}
-								else
-								{
-									hight = g_device_config.tag_h - g_locate_net_info.sub_anchor_h;
-								}
-								
+								hight = g_device_config.tag_h - g_locate_net_info.main_anchor_h;
+				
 								rett = CalcPosition_enu(d0,pct->easting,pct->northing,pct->upping,d1,hight,g_locate_net_info.on_left,clua_x_y_z);
 								if(rett < 0)
 								{
-									DBG_PRINT("6. main_%d dis: %d cm,sub_%d: %d cm, tag pos is invalid value, rett: %d\r\n", g_locate_net_info.main_anchor_id,dis0, g_locate_net_info.sub_anchor_id,dis1, rett);							
+									DBG_POST_NOTE_PRINT("6. main_%d dis: %d cm,sub_%d: %d cm, tag pos is invalid value, rett: %d\r\n", g_locate_net_info.main_anchor_id,dis0, g_locate_net_info.sub_anchor_id,dis1, rett);							
 								}
 								else
 								{								
@@ -3262,68 +3101,47 @@ ret_t tag_ranging(u8 tag_slot)
 									pct->easting = clua_x_y_z[0];
 									pct->northing = clua_x_y_z[1];
 									pct->upping = clua_x_y_z[2];
-									ENUToECEF(pcc, center, pct);							
-									
-									if(g_open_filter_flag == 1)
-									{
-										Filter(pcc->x, pcc->y, pcc->z, out_xyz, get_cur_time(), g_reset_filter);
-										g_reset_filter = 0;
-										pcc->x = out_xyz[0];
-										pcc->y = out_xyz[1];
-										pcc->z = out_xyz[2];
-									}
-									
-									ECEFToWGS(pcg, pcc);
-									
-							//		pcg->latitude = KalmanFilter(pcg->latitude,g_device_config.kalman_q,g_device_config.kalman_r,0); //卡尔曼滤波
-							//		pcg->longitude = KalmanFilter(pcg->longitude,g_device_config.kalman_q,g_device_config.kalman_r,1); 
-							//		pcg->height = KalmanFilter(pcg->height,g_device_config.kalman_q,g_device_config.kalman_r,2); 
-									
+									ENUToECEF(pcc, center, pct);																								
+									ECEFToWGS(pcg, pcc);											
 									g_pos_info.tag_position[0] = pcg->latitude;
 									g_pos_info.tag_position[1] = pcg->longitude;
 									g_pos_info.tag_position[2] = pcg->height;
-																					
+#if 0																					
 									calc_xyz(g_locate_net_info.anchor_position[0],g_locate_net_info.anchor_position[1], g_locate_net_info.anchor_position[2], \
-										g_locate_net_info.anchor_position[3],g_locate_net_info.anchor_position[4], g_locate_net_info.anchor_position[5], \
-										g_pos_info.tag_position[0],g_pos_info.tag_position[1],g_pos_info.tag_position[2],out_xyz2);	
+									g_locate_net_info.anchor_position[3],g_locate_net_info.anchor_position[4], g_locate_net_info.anchor_position[5], \
+									g_pos_info.tag_position[0],g_pos_info.tag_position[1],g_pos_info.tag_position[2],out_xyz2);									
 									g_pos_info.t2main_dist = out_xyz2[0];	
 									g_pos_info.t2wall_dist = out_xyz2[1];	
-									//g_pos_info.t2main_dist = clua_x_y_z[3];	
-									//g_pos_info.t2wall_dist = clua_x_y_z[4];	
+#endif	
+
+									g_pos_info.t2main_dist = clua_x_y_z[3];	
+									g_pos_info.t2wall_dist = clua_x_y_z[4];	
 									g_pos_info.t2ref_dist = calc_dist(pcg->latitude, pcg->longitude, pcg->height, g_device_config.ref_position[0],g_device_config.ref_position[1],g_device_config.ref_position[2]);
-									g_pos_info.rssi = g_uwb_rg_ssi;
+									g_pos_info.main_rssi = tag_main_t4_quality.rx_power;
+									g_pos_info.sub_rssi =  tag_sub_t4_quality.rx_power;
 									position_interval = get_count_time(g_last_tag_position_time, get_cur_time());	
 									g_last_tag_position_time = get_cur_time();
 									g_pos_info.position_interval = position_interval;
+									g_pos_info.pos_Time = osKernelGetTickCount();
 									g_pos_info.tag_position_valid_flag = POS_VALID;	
 
-								//	if(fabs(g_pos_info.t2wall_dist - g_device_config.t2wall_actual_dist) > 3.0)
-								//	{
-								//		DBG_WARNING_PRINT("t2wall_dist error is too big\r\n");
-								//	}
-									num++;									
-									DBG_WARNING_PRINT("[%d]pst_info:%lf,%lf,%lf,%d,%lf,%d,%lf,%lf,%lf,%d\r\n", 
+									num++;	
+									t2wall_dist_diff = g_pos_info.t2wall_dist - g_device_config.t2wall_actual_dist;
+
+									time_end1 = get_cur_time();
+									nus1 = get_count_time(time_start1, time_end1);	
+									
+									DBG_POST_PRINT("[%d]post_info:%lf,%lf,%lf,%d,%lf,%d,%lf,%lf,%lf,%lf,%d,%d\r\n", \
 										num,g_pos_info.tag_position[0], g_pos_info.tag_position[1], g_pos_info.tag_position[2], \
 										g_locate_net_info.main_anchor_id,d0,g_locate_net_info.sub_anchor_id,d1, \
-										g_pos_info.t2wall_dist,g_pos_info.t2main_dist,position_interval);		
-									
+										g_pos_info.t2wall_dist,g_pos_info.t2main_dist,t2wall_dist_diff, position_interval,nus1);								
 								}
-
-
-								time_end1 = get_cur_time();
-								nus1 = get_count_time(time_start1, time_end1);
-								
-								time_end = get_cur_time();
-								nus = get_count_time(time_start, time_end);		
-							
-								
-								DBG_PRINT("tag postion calc take time : %d us , pos_intval : %d us\r\n", nus1,position_interval);
 
 								GLOBAL_FREE(pcc);
 								GLOBAL_FREE(center);
 								GLOBAL_FREE(pcg);
-								GLOBAL_FREE(pct);							
-								
+								GLOBAL_FREE(pct);
+							
 								ret = RET_SUCCESS;
 								goto end;
 			
@@ -3335,14 +3153,15 @@ ret_t tag_ranging(u8 tag_slot)
 
 		}
 
-end:		
+end: 	
+
 		DBG_PRINT("exit, state :%d\r\n", state);
 		return ret;   
 }
 
 
 
-ret_t tag_test_ranging(void) 
+ret_t tag_test_ranging(void)  
 {	   			
 		u8 package_buf[PACKAGE_BUF_SIZE];
 		u8 buf[BUF_SIZE] = {0};
@@ -3367,6 +3186,7 @@ ret_t tag_test_ranging(void)
 		u32 ranging_cnt = 0;
 		u32 tmp = 0;
 		u8 i;
+		rcv_signal_quality_t t2_quality, t4_quality, t6_quality;
 
 		
 		//2.测距
@@ -3430,13 +3250,15 @@ ret_t tag_test_ranging(void)
 								if(!((ret == RET_SUCCESS) && (cmd == RESP) && \
 									(target_id == Flash_Device_ID)&& \
 									(src_device_type == ANCHOR) && \
-									(buf_len == 4)))
+									(buf_len == 16)))
 								{
 									break;
 								}
 
 								Time_ts[1] = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];//获得主基站POLL接收时间T2	
-								Time_ts[3] = g_rx_timestamp;	//获得接受到主基站RESP时间T4												
+								Time_ts[3] = g_rx_timestamp;	//获得接受到主基站RESP时间T4		
+								t4_quality = g_rcv_signal_quality; 
+								t2_quality = *(rcv_signal_quality_t*)&buf[4];
 								state=2;
 
 					
@@ -3496,6 +3318,7 @@ ret_t tag_test_ranging(void)
 								
 								Time_ts[2] = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];//获得主基站RESP帧发送时间T3
 								Time_ts[5] = (buf[4] << 24) | (buf[5] << 16) | (buf[6] << 8) | buf[7];//获得主基站RESP帧发送时间T6	
+								t6_quality = *(rcv_signal_quality_t*)&buf[8];
 								state=4;
 			
 								break;					
@@ -3507,9 +3330,10 @@ ret_t tag_test_ranging(void)
 						{
 								//uint32 Time_ts_F[6];
 								double Ra, Rb, Da, Db;
+								double tprop_diff; //双向测距计时差异
 		            uint64 tof_dtu;
 								double tof;
-								double distance,dist2;
+								double distance,dist;
 								s32 dis0, dis1;
 								double clua_x_y[2];
 								u8 cla_flag=0;
@@ -3559,9 +3383,11 @@ ret_t tag_test_ranging(void)
 		            tof_dtu = (uint64)((Ra * Rb - Da * Db) / (Ra + Rb + Da + Db));//计算公式
 		            tof = tof_dtu * DWT_TIME_UNITS;
 		            distance = tof * SPEED_OF_LIGHT;//距离=光速*飞行时间
-								dist2 = distance - dwt_getrangebias(config.chan,(float)distance, config.prf);//距离减去矫正系数	
-								dis0 = dist2*100;//dis 为单位为cm的距离		
+								dist = distance - dwt_getrangebias(config.chan,(float)distance, config.prf);//距离减去矫正系数	
+								dis0 = dist*100;//dis 为单位为cm的距离		
 
+								
+								tprop_diff = (Ra - Db) - (Rb - Da);								
 
 								//距离低通滤波
 							//	dis0 = LP(dis0,0);
@@ -3577,8 +3403,24 @@ ret_t tag_test_ranging(void)
 									tmp = 0;
 								}
 
+								
+								DBG_RANGING_PRINT("rg_info:%u,%u,%u,%u,%u,%u,%10.0f,%10.0f,%10.0f,%10.0f,%ld,%lf,%lf,%lf,%d,%d,%d,%2.2f,%d,%d,%d,%2.2f,%d,%d,%d,%2.2f,%10.0f\r\n", \
+									Time_ts[0],Time_ts[1],Time_ts[2],Time_ts[3],Time_ts[4],Time_ts[5],Ra,Rb,Da,Db,tof_dtu,tof,distance,dist, \
+									t2_quality.rx_fp_power_diff,t2_quality.f1_noise_amp_diff,t2_quality.std_noise,t2_quality.rx_power, \
+								  t4_quality.rx_fp_power_diff,t4_quality.f1_noise_amp_diff,t4_quality.std_noise,t4_quality.rx_power, \
+								  t6_quality.rx_fp_power_diff,t6_quality.f1_noise_amp_diff,t6_quality.std_noise,t6_quality.rx_power,tprop_diff);
+
+								if(t2_quality.rx_fp_power_diff >= g_device_config.sig_qa_thr \
+									|| t4_quality.rx_fp_power_diff >= g_device_config.sig_qa_thr \
+									|| t6_quality.rx_fp_power_diff >= g_device_config.sig_qa_thr
+									|| fabs(tprop_diff) > 600)
+								{
+									DBG_RANGING_PRINT("sig qa is too bad\r\n");
+									
+								}	
+
 								DBG_PRINT("dis0: %d\r\n", dis0);
-								osDelay(100);
+								delay_ms(1000);
 								state = 5;
 								
 								ret = RET_SUCCESS;
@@ -3639,6 +3481,7 @@ ret_t tag_test_111byte_ranging(void)
 		float uwb_rg_ssi;
 		static u32 ranging_cnt = 0;
 		static u32 tmp = 0;
+		rcv_signal_quality_t t4_quality;
 		
 		
 		//2.测距
@@ -3682,13 +3525,15 @@ ret_t tag_test_111byte_ranging(void)
 								if(!((ret == RET_SUCCESS) && (cmd == RESP) && \
 									(target_id == Flash_Device_ID)&& \
 									(src_device_type == ANCHOR) && \
-									(buf_len == 4)))
+									(buf_len == 16)))
 								{
 									goto end;
 								}
 
 								Time_ts[1] = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];//获得主基站POLL接收时间T2	
-								Time_ts[3] = g_rx_timestamp;	//获得接受到主基站RESP时间T4												
+								Time_ts[3] = g_rx_timestamp;	//获得接受到主基站RESP时间T4	
+								t4_quality = g_rcv_signal_quality; 
+								
 								state=2;
 								
 								uwb_rg_ssi = g_uwb_rg_ssi;
@@ -3759,7 +3604,6 @@ ret_t tag_test_111byte_ranging(void)
 								//uint32 Time_ts_F[6];
 								double Ra, Rb, Da, Db;
 		            int64 tof_dtu;
-								s32 dist2;
 								double distance,dist; 
 								double tof; 
 								double clua_x_y[2];
@@ -3772,8 +3616,8 @@ ret_t tag_test_111byte_ranging(void)
 		            tof_dtu = (int64)((Ra * Rb - Da * Db) / (Ra + Rb + Da + Db));//计算公式
 		            tof = tof_dtu * DWT_TIME_UNITS;
 		            distance = tof * SPEED_OF_LIGHT;//距离=光速*飞行时间
-								dist2 = distance - dwt_getrangebias(config.chan,(float)distance, config.prf);//距离减去矫正系数	
-								dis0 = dist2*100;//dis 为单位为cm的距离		
+								dist = distance - dwt_getrangebias(config.chan,(float)distance, config.prf);//距离减去矫正系数	
+								dis0 = dist*100;//dis 为单位为cm的距离		
 
 
 								//距离低通滤波
@@ -3810,6 +3654,192 @@ end:
 }
 
 
+ret_t main_ant_cal_ranging(s32 *out_dist)
+{
+			u8 package_buf[PACKAGE_BUF_SIZE];
+			u8 buf[BUF_SIZE] = {0};
+			u16 package_buf_len;
+			u16 buf_len;
+			u8 dynamic_slot;
+			u16 target_id;
+			u16 src_id;
+			u16 tag_id;
+			u8 src_device_type;
+			u8 src_device_sub_type; 
+			u8 cmd;
+			u16 tag_wait_time_us;
+			u32 time_start, time_end, nus, timeout; 	
+			ret_t ret = RET_SUCCESS;
+			u32 time_out;
+			u32 state = 0;
+			u32 Time_ts[6]; 					//飞行时间缓存记录
+			u32 Time_ts2[6];						//飞行时间缓存记录
+			u32 dm9000_cur_time, dm9000_start_time, tx_time, time;
+			int32_t dis0, dis1;
+			float uwb_rg_ssi;
+			static u32 ranging_cnt = 0;
+			static u32 tmp = 0;
+			rcv_signal_quality_t t4_quality;
+			
+			
+			//2.测距
+			while(1)
+			{ 
+					switch(state)
+					{
+							//0.发送POLL帧
+							case 0: 
+							{ 
+									time_start = get_cur_time();
+									ret = make_package(POLL, Flash_Device_ID, g_locate_net_info.main_anchor_id, TAG, TAG, NULL, 0, package_buf, &package_buf_len);
+									if(ret != RET_SUCCESS)
+									{
+										goto end;
+									}
+									g_get_tx_timestamp_flag = 1;
+									ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT); 
+									if(ret != RET_SUCCESS)
+									{
+										goto end;
+									}
+									
+									Time_ts[0] = g_tx_timestamp;										//获得POLL发送时间T1			
+									state=1;
+						
+									break;
+							} 		
+	
+							//1.接受主基站RESP帧		
+							case 1:
+							{ 
+									g_get_rx_timestamp_flag = 1;
+									ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, DM9000_RX_TIMEOUT);
+									if(ret != RET_SUCCESS)
+									{
+										goto end;
+									}
+									
+									ret = parsing_package(package_buf, package_buf_len, &cmd, &src_id,&target_id, &src_device_type, &src_device_sub_type, buf, &buf_len);
+									if(!((ret == RET_SUCCESS) && (cmd == RESP) && \
+										(target_id == Flash_Device_ID)&& \
+										(src_device_type == ANCHOR) && \
+										(buf_len == 16)))
+									{
+										goto end;
+									}
+	
+									Time_ts[1] = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];//获得主基站POLL接收时间T2 
+									Time_ts[3] = g_rx_timestamp;	//获得接受到主基站RESP时间T4	
+									t4_quality = g_rcv_signal_quality; 
+									
+									state=2;
+									
+									uwb_rg_ssi = g_uwb_rg_ssi;
+	
+						
+									break;
+	
+							}
+	
+	
+							//2.发送FINAL帧
+							case 2:
+							{
+						//		printf("%d\n",SYS_Calculate_ACTIVE_FLAG); 
+									ret = make_package(FINAL, Flash_Device_ID, g_locate_net_info.main_anchor_id, TAG, TAG, NULL, 0, package_buf, &package_buf_len);
+									if(ret != RET_SUCCESS)
+									{
+										goto end;
+									}
+									g_get_tx_timestamp_flag = 1;
+									ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT); 
+									if(ret != RET_SUCCESS)
+									{
+										goto end;
+									}
+									
+									Time_ts[4] = g_tx_timestamp;										//获得FINAL发送时间T5
+									state=3;
+						
+									break;
+	
+	
+							}
+	
+							//3.接受主基站ACK帧
+							case 3:
+							{
+									//printf("%d\n",SYS_Calculate_ACTIVE_FLAG);
+									ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, DM9000_RX_TIMEOUT);
+									if(ret != RET_SUCCESS)
+									{
+										goto end;
+									}
+	
+									uwb_rg_ssi = g_uwb_rg_ssi;
+									
+									ret = parsing_package(package_buf, package_buf_len, &cmd, &src_id,&target_id, &src_device_type, &src_device_sub_type, buf, &buf_len);
+									if(!((ret == RET_SUCCESS) && (cmd == ACK) && \
+										(target_id == Flash_Device_ID)&& \
+										(src_device_type == ANCHOR)))
+									{
+										goto end;
+									}
+									
+									Time_ts[2] = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];//获得主基站RESP帧发送时间T3
+									Time_ts[5] = (buf[4] << 24) | (buf[5] << 16) | (buf[6] << 8) | buf[7];//获得主基站RESP帧发送时间T6	
+									state=4;
+						
+									break;					
+							}
+	
+	
+							//4.计算标签与主基站、从基站的距离、计算
+							case 4:
+							{
+									//uint32 Time_ts_F[6];
+									double Ra, Rb, Da, Db;
+									uint64 tof_dtu;
+									double distance,dist; 
+									double tof; 
+									double clua_x_y[2];
+									u8 cla_flag=0;
+	
+									Ra = (double)(Time_ts[3] - Time_ts[0]);//Tround1 = T4 - T1	
+									Rb = (double)(Time_ts[5] - Time_ts[2]);//Tround2 = T6 - T3 
+									Da = (double)(Time_ts[4] - Time_ts[3]);//Treply2 = T5 - T4	
+									Db = (double)(Time_ts[2] - Time_ts[1]);//Treply1 = T3 - T2	
+									tof_dtu = (int64)((Ra * Rb - Da * Db) / (Ra + Rb + Da + Db));//计算公式
+									tof = tof_dtu * DWT_TIME_UNITS;
+									distance = tof * SPEED_OF_LIGHT;//距离=光速*飞行时间
+									dist = distance - dwt_getrangebias(config.chan,(float)distance, config.prf);//距离减去矫正系数 
+									dis0 = dist*100;//dis 为单位为cm的距离		
+	
+	
+									//距离低通滤波
+								//	dis0 = LP(dis0,0);
+	
+									*out_dist = dis0;
+									DBG_PRINT("dist: %d cm\r\n", *out_dist);
+									ret = RET_SUCCESS;
+									goto end;
+							}
+	
+							default:
+									break;
+				}
+	
+			}
+	
+	end:		
+			DBG_PRINT("exit, state :%d\r\n", state);
+			return ret; 
+
+
+}
+
+
+
 
 ret_t m_anchor_ranging(void)
 {
@@ -3817,7 +3847,7 @@ ret_t m_anchor_ranging(void)
 		u8 package_buf[PACKAGE_BUF_SIZE];
 		u8 buf[BUF_SIZE] = {0};
 		u16 package_buf_len;
-		u16 buf_len;
+		u16 buf_len, len;
 		u8 dynamic_slot;
 		u8 slot;
 		u16 target_id;
@@ -3826,32 +3856,34 @@ ret_t m_anchor_ranging(void)
 		u8 src_device_type;
 		u8 src_device_sub_type; 
 		u8 cmd;
-		u32 time_start, time_end, nus, timeout; 	
+		u32 time_start, time_end, nus, timeout;
 		ret_t ret = RET_SUCCESS;
 		u32 time_out;
 		u32 T2, T3, T6;
 		u32 delay_tx_time;		
 		u32 state = 0;
+		rcv_signal_quality_t t2_quality, t6_quality;
 
 		time_start = get_cur_time();
+		
 		while(1)
 		{		
 				time_end = get_cur_time();
 				nus = get_count_time(time_start, time_end);
-				if(nus > TAG_RANGING_TIMEOUT)
+				if(nus > g_tag_ranging_timeout_us)
 				{				
 					ret = TIME_OUT;
-					DBG_PRINT("MA: range all time out,%d/%d(unit:1us)\r\n",nus,TAG_RANGING_TIMEOUT);
+					DBG_PRINT("MA: range all time out,%d/%d(unit:1us)\r\n",nus,g_tag_ranging_timeout_us);
 				 	goto end;
 				} 	
 
-				if((TAG_RANGING_TIMEOUT - nus) > 0xffff)
+				if((g_tag_ranging_timeout_us - nus) > 0xffff)
 				{
 						time_out = 0xffff;
 				}
 				else
 				{
-						time_out = (TAG_RANGING_TIMEOUT - nus);
+						time_out = (g_tag_ranging_timeout_us - nus);
 				}
 		
 				
@@ -3865,7 +3897,7 @@ ret_t m_anchor_ranging(void)
 								if(ret != RET_SUCCESS)
 								{
 									state=0;
-									DBG_PRINT("5-0 MA: poll data rcv failed0! ret=%s\r\n",ret_type_str[ret]);
+									DBG_ERR_PRINT("5-0 MA: poll data rcv failed0! ret=%s\r\n",ret_type_str[ret]);
 									break;
 								}
 								
@@ -3874,9 +3906,9 @@ ret_t m_anchor_ranging(void)
 									(target_id == Flash_Device_ID) && \
 									(src_device_type == TAG) && (src_device_sub_type == TAG)))
 								{
-									DBG_PRINT("state :%d\r\n", state);
+									DBG_ERR_PRINT("state :%d\r\n", state);
 									state=0;
-									DBG_PRINT("5-0 MA: poll data rcv failed1: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
+									DBG_ERR_PRINT("5-0 MA: poll data rcv failed1: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
 													ret_type_str[ret],
 													dm_comm_type_str[cmd],
 													target_id,src_id,
@@ -3886,6 +3918,7 @@ ret_t m_anchor_ranging(void)
 								}						
 
 								T2 = g_rx_timestamp;	//获得接受到标签POLL帧时间T2
+								t2_quality = g_rcv_signal_quality; 
 								g_recv_tag_id = src_id;
 								state=1;
 								DBG_PRINT("5-0 MA: poll data rcv suc, sid:%d , stamp2:%u \r\n",src_id,T2);
@@ -3902,7 +3935,10 @@ ret_t m_anchor_ranging(void)
 								buf[1] = T2 >> 16;
 								buf[2] = T2 >> 8;
 								buf[3] = T2 & 0xff;
-								ret = make_package(RESP, Flash_Device_ID, g_recv_tag_id, ANCHOR, g_anchor_type, buf, 4, package_buf, &package_buf_len);
+								memcpy(&buf[4], (u8*)&t2_quality, sizeof(rcv_signal_quality_t));
+								len = 4 + sizeof(rcv_signal_quality_t);
+								
+								ret = make_package(RESP, Flash_Device_ID, g_recv_tag_id, ANCHOR, g_anchor_type, buf, len, package_buf, &package_buf_len);
 								if(ret != RET_SUCCESS)
 								{
 									state=0;
@@ -3910,9 +3946,10 @@ ret_t m_anchor_ranging(void)
 
 								}
 
-								delay_us(50);
+							//	delay_us(50);
 								g_get_tx_timestamp_flag = 1;
-								ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT);	
+							//	ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT);	
+								ret = dm9000_send_data(package_buf, package_buf_len, DWT_RESPONSE_EXPECTED, 0, TX_NORMAL_TIMEOUT);	
 								if(ret != RET_SUCCESS)
 								{
 									DBG_ERR_PRINT("5-1 mresp data send fail !\r\n");
@@ -3932,7 +3969,9 @@ ret_t m_anchor_ranging(void)
 						//2.接受从基站RESP帧
 						case 2: 
 						{
-								ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, DM9000_RX_TIMEOUT);
+								//ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, DM9000_RX_TIMEOUT);
+							//	ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_DOUBLE_RECV, 0, DM9000_RX_TIMEOUT);
+								ret = dm9000_recv_data(package_buf, &package_buf_len, NO_OPEN_RECV, 0, DM9000_RX_TIMEOUT);
 								if(ret != RET_SUCCESS)
 								{
 									state=0;
@@ -3965,6 +4004,7 @@ ret_t m_anchor_ranging(void)
 						{
 								g_get_rx_timestamp_flag = 1;
 								ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, DM9000_RX_TIMEOUT);
+								//ret = dm9000_recv_data(package_buf, &package_buf_len, NO_OPEN_RECV, 0, DM9000_RX_TIMEOUT);
 								if(ret != RET_SUCCESS)
 								{
 									state=0;
@@ -3988,6 +4028,7 @@ ret_t m_anchor_ranging(void)
 								}						
 
 								T6 = g_rx_timestamp;	//获得FINAL帧接受时间T6
+								t6_quality = g_rcv_signal_quality; 
 								state=4;
 								DBG_PRINT("5-3 MA: final data rcv suc , sid:%d , stamp6:%u \r\n",src_id,T6);
 
@@ -4007,15 +4048,17 @@ ret_t m_anchor_ranging(void)
 								buf[5] = T6 >> 16;
 								buf[6] = T6 >> 8;
 								buf[7] = T6 & 0xff;
+								memcpy(&buf[8], (u8*)&t6_quality, sizeof(rcv_signal_quality_t));
+								len = 8 + sizeof(rcv_signal_quality_t);
 								
-								ret = make_package(ACK, Flash_Device_ID, g_recv_tag_id, ANCHOR, g_anchor_type, buf, 8, package_buf, &package_buf_len);
+								ret = make_package(ACK, Flash_Device_ID, g_recv_tag_id, ANCHOR, g_anchor_type, buf, len, package_buf, &package_buf_len);
 								if(ret != RET_SUCCESS)
 								{
 									state=0;
 									break;
 								}
 
-								delay_us(50);
+							//	delay_us(50);
 								ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT);		
 								if(ret != RET_SUCCESS)
 								{
@@ -4085,7 +4128,7 @@ ret_t anchor_test_ranging(void)
 		u8 package_buf[PACKAGE_BUF_SIZE];
 		u8 buf[BUF_SIZE] = {0};
 		u16 package_buf_len;
-		u16 buf_len;
+		u16 buf_len, len;
 		u8 dynamic_slot;
 		u8 slot;
 		u16 target_id;
@@ -4102,6 +4145,7 @@ ret_t anchor_test_ranging(void)
 		u32 delay_tx_time;		
 		u32 state = 0;
 		float uwb_rg_ssi;
+		rcv_signal_quality_t t2_quality, t6_quality;
 
 
 		while(1)
@@ -4138,6 +4182,7 @@ ret_t anchor_test_ranging(void)
 							
 
 								T2 = g_rx_timestamp;	//获得接受到标签POLL帧时间T2
+								t2_quality = g_rcv_signal_quality;
 								g_recv_tag_id = src_id;
 								state=1;
 
@@ -4153,7 +4198,10 @@ ret_t anchor_test_ranging(void)
 								buf[1] = T2 >> 16;
 								buf[2] = T2 >> 8;
 								buf[3] = T2 & 0xff;
-								ret = make_package(RESP, Flash_Device_ID, g_recv_tag_id, ANCHOR, g_anchor_type, buf, 4, package_buf, &package_buf_len);
+								memcpy(&buf[4], (u8*)&t2_quality, sizeof(rcv_signal_quality_t));
+								len = 4 + sizeof(rcv_signal_quality_t);
+								
+								ret = make_package(RESP, Flash_Device_ID, g_recv_tag_id, ANCHOR, g_anchor_type, buf, len, package_buf, &package_buf_len);
 								if(ret != RET_SUCCESS)
 								{
 									break;
@@ -4196,6 +4244,7 @@ ret_t anchor_test_ranging(void)
 								}						
 
 								T6 = g_rx_timestamp;	//获得FINAL帧接受时间T6
+								t6_quality = g_rcv_signal_quality;
 								state=3;
 
 								break;
@@ -4213,7 +4262,9 @@ ret_t anchor_test_ranging(void)
 								buf[4] = T6 >> 24;
 								buf[5] = T6 >> 16;
 								buf[6] = T6 >> 8;
-								buf[7] = T6 & 0xff;
+								buf[7] = T6 & 0xff;								
+								memcpy(&buf[8], (u8*)&t6_quality, sizeof(rcv_signal_quality_t));
+								len = 8 + sizeof(rcv_signal_quality_t);
 								
 								ret = make_package(ACK, Flash_Device_ID, g_recv_tag_id, ANCHOR, g_anchor_type, buf, 52, package_buf, &package_buf_len);
 								if(ret != RET_SUCCESS)
@@ -4257,6 +4308,165 @@ ret_t anchor_test_ranging(void)
 
 		return ret;	
 }
+
+
+ret_t slave_ant_cal_ranging(void)
+{
+		uint32 i;
+		u8 package_buf[PACKAGE_BUF_SIZE];
+		u8 buf[BUF_SIZE] = {0};
+		u16 package_buf_len;
+		u16 buf_len, len;
+		u8 dynamic_slot;
+		u8 slot;
+		u16 target_id;
+		u16 src_id;
+		u16 tag_id;
+		u8 src_device_type;
+		u8 src_device_sub_type; 
+		u8 cmd;
+		u8 slot_num;
+		u32 time_start, time_end, nus, timeout; 	
+		ret_t ret = RET_SUCCESS;
+		u32 time_out;
+		u32 T2, T3, T6;
+		u32 delay_tx_time;		
+		u32 state = 0;
+		float uwb_rg_ssi;
+		rcv_signal_quality_t t2_quality, t6_quality;
+
+
+		while(1)
+		{					
+				switch(state)
+				{
+						//0.接受标签POLL帧
+						case 0:
+						{
+								g_get_rx_timestamp_flag = 1;
+								ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, osWaitForever);						
+								if(ret != RET_SUCCESS)
+								{
+									goto end;
+								}
+								
+								ret = parsing_package(package_buf, package_buf_len, &cmd, &src_id,&target_id, &src_device_type, &src_device_sub_type, buf, &buf_len);
+								if(!((ret == RET_SUCCESS) && (cmd == POLL) && \
+									(src_device_type == TAG) && (src_device_sub_type == TAG)))
+								{
+									goto end;
+								}								
+
+								T2 = g_rx_timestamp;	//获得接受到标签POLL帧时间T2
+								t2_quality = g_rcv_signal_quality;
+								g_recv_tag_id = src_id;
+								state=1;
+
+								break;
+						}
+
+
+						//1.发送RESP帧
+						case 1: 
+						{
+								//printf("%d\n",SYS_Calculate_ACTIVE_FLAG); 
+								buf[0] = T2 >> 24;
+								buf[1] = T2 >> 16;
+								buf[2] = T2 >> 8;
+								buf[3] = T2 & 0xff;
+								memcpy(&buf[4], (u8*)&t2_quality, sizeof(rcv_signal_quality_t));
+								len = 4 + sizeof(rcv_signal_quality_t);
+								
+								ret = make_package(RESP, Flash_Device_ID, g_recv_tag_id, ANCHOR, g_anchor_type, buf, len, package_buf, &package_buf_len);
+								if(ret != RET_SUCCESS)
+								{
+									goto end;
+
+								}
+								g_get_tx_timestamp_flag = 1;
+								ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT);	
+								if(ret != RET_SUCCESS)
+								{
+									goto end;
+								}
+
+								T3 = g_tx_timestamp;										//获得RESP帧接受时间T3
+								state=2;
+
+								break;
+								
+						}						
+
+						//2.接受FINAL帧
+						case 2: 
+						{
+								g_get_rx_timestamp_flag = 1;
+								ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, DM9000_RX_TIMEOUT);								
+								if(ret != RET_SUCCESS)
+								{
+									goto end;
+								}
+								
+								ret = parsing_package(package_buf, package_buf_len, &cmd, &src_id,&target_id, &src_device_type, &src_device_sub_type, buf, &buf_len);
+								if(!((ret == RET_SUCCESS) && (cmd == FINAL) && \
+									(src_device_type == TAG) && (src_device_sub_type == TAG)))
+								{
+									goto end;
+								}						
+
+								T6 = g_rx_timestamp;	//获得FINAL帧接受时间T6
+								t6_quality = g_rcv_signal_quality;
+								state=3;
+
+								break;
+
+						}
+
+						//3.发送ACK帧
+						case 3:
+						{
+								//printf("%d\n",SYS_Calculate_ACTIVE_FLAG); 
+								buf[0] = T3 >> 24;
+								buf[1] = T3 >> 16;
+								buf[2] = T3 >> 8;
+								buf[3] = T3 & 0xff;
+								buf[4] = T6 >> 24;
+								buf[5] = T6 >> 16;
+								buf[6] = T6 >> 8;
+								buf[7] = T6 & 0xff;								
+								memcpy(&buf[8], (u8*)&t6_quality, sizeof(rcv_signal_quality_t));
+								len = 8 + sizeof(rcv_signal_quality_t);
+								
+								ret = make_package(ACK, Flash_Device_ID, g_recv_tag_id, ANCHOR, g_anchor_type, buf, 52, package_buf, &package_buf_len);
+								if(ret != RET_SUCCESS)
+								{
+									goto end;
+								}
+										
+								ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT);		
+								if(ret != RET_SUCCESS)
+								{
+									goto end;
+								}
+
+								state = 4;
+								ret = RET_SUCCESS;
+								goto end;							
+
+						}
+						
+						default:
+								goto end;
+
+				}
+
+		}
+
+end:
+		DBG_PRINT("state :%d\r\n", state);
+		return ret;	
+}
+
 
 
 
@@ -4754,7 +4964,16 @@ void auto_choose_main_tx_power(void)
 								
 								g_device_config.tx_power = tx_power;
 								save_device_para();	
-								DBG_PRINT("tx_power config is suc, config value: 0x%x\r\n",  g_device_config.tx_power);								
+								DBG_PRINT("tx_power config is suc, config value: 0x%x\r\n",  g_device_config.tx_power);	
+								
+								buf[0] = STOP_AUTO_CHOOSE_TX_POWER;
+								make_package(AUTO_CHOOSE_TX_POWER, 0xffff, 0xfffe, ANCHOR, MAIN_ANCHOR, buf, 1, package_buf, &package_buf_len);								
+								for(i=0; i<20; i++)
+								{
+									dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT); 
+									delay_ms(1);
+								}
+				
 								break;
 							}
 
@@ -4830,20 +5049,14 @@ void auto_choose_main_tx_power(void)
 						DBG_PRINT("auto choose tx_power is finished, please stop auto choose tx_power\r\n");	
 
 						if(g_dwt_auto_tx_power_config.auto_choose_tx_power == 0)
-						{
+						{	
 							buf[0] = STOP_AUTO_CHOOSE_TX_POWER;
-							make_package(AUTO_CHOOSE_TX_POWER, 0xffff, 0xfffe, ANCHOR, MAIN_ANCHOR, buf, 1, package_buf, &package_buf_len);
-
-							for(i=0; i<5; i++)
+							make_package(AUTO_CHOOSE_TX_POWER, 0xffff, 0xfffe, ANCHOR, MAIN_ANCHOR, buf, 1, package_buf, &package_buf_len);								
+							for(i=0; i<20; i++)
 							{
-								ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT);	
-								if(ret != RET_SUCCESS)
-								{						 
-									break;
-								}
+								dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT); 
 								delay_ms(1);
-							}
-						
+							}						
 							return;
 						}
 
@@ -4862,6 +5075,323 @@ void auto_choose_main_tx_power(void)
 
 
 
+u16 antDelay2antDist(u16 ant_delay)
+{
+	u16 ant_delay_dist = 0.46917519677 * ant_delay;
+	return ant_delay_dist;
+}
+
+u16 antDist2antDelay(u16 ant_delay_dist)
+{
+	u16 ant_delay = ant_delay_dist / 0.46917519677;
+	return ant_delay;
+}
+
+
+
+
+void auto_cal_main_ant(void)
+{
+		u8 package_buf[PACKAGE_BUF_SIZE];
+		u8 buf[BUF_SIZE] = {0};
+		u16 package_buf_len;
+		u16 buf_len, len;
+		u16 target_id;
+		u16 src_id;
+		u16 tag_id;
+		u8 src_device_type;
+		u8 src_device_sub_type; 
+		u8 cmd;	
+		s32 dist_cm, dist_diff_cm;
+		u16 ant_delay_dist;
+		u16 ant_delay;
+		float delay_cnt;
+		u8 i;
+		ret_t ret = RET_SUCCESS;
+
+		u8 state = 0;
+
+		ant_delay = ANT_DLY;
+		dwt_setrxantennadelay(ant_delay);	
+		dwt_settxantennadelay(ant_delay);
+
+		while(1)
+		{
+			if(g_dwt_auto_ant_cal.auto_ant_cal_open == 0)
+			{	
+				memcpy(&buf[0], (u8*)&ant_delay, 2);
+				make_package(STOP_AUTO_CAL_ANT, 0xffff, 0xfffe, ANCHOR, MAIN_ANCHOR, buf, 2, package_buf, &package_buf_len);	
+				dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT);
+				delay_ms(1);				
+				return;
+			}
+		
+			switch(state)
+			{
+				case 0://发起自动校准天线
+					{
+						buf[0] = g_dwt_auto_ant_cal.salve_ant_cal_en;
+						memcpy(&buf[1], (u8*)&ant_delay, 2);
+						len = 3;
+						make_package(AUTO_CAL_ANT, 0xffff, 0xfffe, ANCHOR, MAIN_ANCHOR, buf, len, package_buf, &package_buf_len);	
+						ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT);	
+						if(ret != RET_SUCCESS)
+						{						
+							break;
+						}
+						state = 1;
+					}
+					break;
+				case 1://接受确认帧
+					{
+						ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, DM9000_RX_TIMEOUT);
+						if(ret != RET_SUCCESS)
+						{	
+							state = 0;
+							break;
+						} 
+						
+						ret = parsing_package(package_buf, package_buf_len, &cmd, &src_id,&target_id, &src_device_type, &src_device_sub_type, buf, &buf_len);
+						if(!((ret == RET_SUCCESS) && (cmd == AUTO_CAL_ANT_ACK)\
+							&& (src_device_type == ANCHOR) && (src_device_sub_type == SUB_ANCHOR) && (src_id == 0xfffe) && (target_id == 0xffff)))
+						{	
+							state = 0;
+							break;
+						}
+						state = 2;
+					}
+					break;
+
+				case 2://测距
+					{
+						ret = main_ant_cal_ranging(&dist_cm);
+						if(ret == RET_SUCCESS)
+						{
+							dist_diff_cm = (s32)(dist_cm - g_dwt_auto_ant_cal.actual_dist_cm);
+							if(abs(dist_diff_cm) == 0)
+							{
+								g_device_config.ant_delay = ant_delay;
+								ant_delay_dist = antDelay2antDist(ant_delay);
+								save_device_para();
+								for(i=0;i<20;i++)
+								{
+									memcpy(&buf[0], (u8*)&ant_delay, 2);
+									make_package(STOP_AUTO_CAL_ANT, 0xffff, 0xfffe, ANCHOR, MAIN_ANCHOR, buf, 2, package_buf, &package_buf_len);	
+									dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT);
+									delay_ms(1);
+								}								
+								state = 5;
+								break;
+							}
+
+							if(dist_diff_cm > 0)
+							{
+								if(dist_diff_cm > 1)
+								{
+									delay_cnt = ((dist_diff_cm / 0.46917519677) / 2); //0.46917519677是每单位计数对应的长度cm
+									ant_delay += (u16)delay_cnt;
+								}
+								else
+								{
+									ant_delay += 1;
+								}
+								
+							}
+							else
+							{
+								if(dist_diff_cm < -1)
+								{
+									delay_cnt = ((abs(dist_diff_cm) / 0.46917519677) / 2);
+									ant_delay -= delay_cnt;
+								}
+								else
+								{
+									ant_delay -= 1;
+								}
+							}
+							dwt_setrxantennadelay(ant_delay);	
+							dwt_settxantennadelay(ant_delay);
+						}
+						state = 3;				
+					}
+					break;
+				case 3://发送校准信息
+					{	
+						DBG_PRINT("ant_delay: %d\r\n", ant_delay);
+						memcpy(&buf[0], (u8*)&ant_delay, 2);
+						len = 2;
+						make_package(AUTO_CAL_ANT_INFO, 0xffff, 0xfffe, ANCHOR, MAIN_ANCHOR, buf, len, package_buf, &package_buf_len);	
+						ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT);	
+						if(ret != RET_SUCCESS)
+						{						
+							break;
+						}
+						state = 4;						
+			
+					}
+					break;
+				case 4://接受校准确认
+					{
+						ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, DM9000_RX_TIMEOUT);
+						if(ret != RET_SUCCESS)
+						{
+							state = 3;
+							break;
+						} 
+						
+						ret = parsing_package(package_buf, package_buf_len, &cmd, &src_id,&target_id, &src_device_type, &src_device_sub_type, buf, &buf_len);
+						if(!((ret == RET_SUCCESS) && (cmd == AUTO_CAL_ANT_INFO_ACK)&&\
+							(src_device_type == ANCHOR) && (src_device_sub_type == SUB_ANCHOR) && (src_id == 0xfffe) && (target_id == 0xffff)))
+						{	
+							state = 3;
+							break;
+						}
+						state = 2;			
+			
+					}
+					break;				
+				case 5://持续打印校准完成信息
+					{
+						DBG_PRINT("ant cal is finished,ant_delay:%u, ant_delay_dist: %u cm\r\n", ant_delay, ant_delay_dist);
+						delay_ms(2000);
+					}
+					break;				
+				default:
+					break;
+
+			}
+
+			DBG_PRINT("state: %d\r\n", state);
+		}
+
+
+}
+
+
+void auto_cal_slave_ant(u8 *in_buf)
+{
+		u8 package_buf[PACKAGE_BUF_SIZE];
+		u8 buf[BUF_SIZE] = {0};
+		u16 package_buf_len;
+		u16 buf_len, len;
+		u16 target_id;
+		u16 src_id;
+		u16 tag_id;
+		u8 src_device_type;
+		u8 src_device_sub_type; 
+		u8 cmd;	
+		s32 dist_cm, dist_diff_cm;
+		u32 ant_delay_dist;
+		u8 salve_ant_cal_en;
+		u16 ant_delay;
+		ret_t ret = RET_SUCCESS;
+
+		u8 state = 0;
+
+
+		salve_ant_cal_en = in_buf[0];
+		memcpy((u8*)&ant_delay, &in_buf[1], 2);
+
+		if(salve_ant_cal_en == 1)
+		{
+			dwt_setrxantennadelay(ant_delay); 
+			dwt_settxantennadelay(ant_delay);
+		}
+			
+		while(1)
+		{
+			switch(state)
+			{
+				case 0://回复校准确认
+					{
+						make_package(AUTO_CAL_ANT_ACK, 0xfffe, 0xffff, ANCHOR, SUB_ANCHOR, NULL, 0, package_buf, &package_buf_len);	
+						ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT);	
+						if(ret != RET_SUCCESS)
+						{						
+							break;
+						}
+						state = 1;
+					}							
+					break;	
+
+			
+				case 1://测距
+					{
+						slave_ant_cal_ranging();
+						state = 2;
+					}
+					break;
+
+						
+				case 2://接受校准信息，并回复确认
+					{
+						ret = dm9000_recv_data(package_buf, &package_buf_len, OPEN_RECV, 0, DM9000_RX_TIMEOUT);
+						if(ret != RET_SUCCESS)
+						{				
+							break;
+						} 
+						
+						ret = parsing_package(package_buf, package_buf_len, &cmd, &src_id,&target_id, &src_device_type, &src_device_sub_type, buf, &buf_len);
+						if(!((ret == RET_SUCCESS) && (cmd == AUTO_CAL_ANT_INFO) && buf_len == 2 &&\
+							(src_device_type == ANCHOR) && (src_device_sub_type == MAIN_ANCHOR) && (src_id == 0xffff) && (target_id == 0xfffe)))
+						{	
+							if(((ret == RET_SUCCESS) && (cmd == AUTO_CAL_ANT) &&\
+									(src_device_type == ANCHOR) && (src_device_sub_type == MAIN_ANCHOR) && (buf_len == 3)))
+							{
+								state = 0;
+								break;
+							}
+							else if(((ret == RET_SUCCESS) && (cmd == STOP_AUTO_CAL_ANT) && (buf_len == 2) &&\
+									(src_device_type == ANCHOR) && (src_device_sub_type == MAIN_ANCHOR) ))
+							{
+								if(salve_ant_cal_en == 1)
+								{
+									memcpy((u8*)&ant_delay, &buf[0], 2);
+									g_device_config.ant_delay = ant_delay;
+									ant_delay_dist = antDelay2antDist(ant_delay);
+									save_device_para();
+									DBG_PRINT("ant cal is finished,ant_delay:%u, ant_delay_dist: %u cm\r\n", ant_delay, ant_delay_dist);
+								}
+								return;
+							}	
+							else
+							{
+								break;
+							}
+						}
+
+						if(salve_ant_cal_en == 1)
+						{
+							dwt_setrxantennadelay(ant_delay); 
+							dwt_settxantennadelay(ant_delay);							
+						}
+							
+						make_package(AUTO_CAL_ANT_INFO_ACK, 0xfffe, 0xffff, ANCHOR, SUB_ANCHOR, NULL, 0, package_buf, &package_buf_len);
+						ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT);	
+						if(ret != RET_SUCCESS)
+						{						
+							break;
+						}
+						state = 1;
+					}
+					break;
+			
+				
+				default:
+					break;
+
+			}
+
+
+		}
+
+
+}
+
+
+
+
+
 
 ret_t anchor_test_111byte_ranging(void)
 {
@@ -4869,7 +5399,7 @@ ret_t anchor_test_111byte_ranging(void)
 		u8 package_buf[PACKAGE_BUF_SIZE];
 		u8 buf[BUF_SIZE] = {0};
 		u16 package_buf_len;
-		u16 buf_len;
+		u16 buf_len, len;
 		u8 dynamic_slot;
 		u8 slot;
 		u16 target_id;
@@ -4886,6 +5416,7 @@ ret_t anchor_test_111byte_ranging(void)
 		u32 delay_tx_time;		
 		u32 state = 0;
 		float uwb_rg_ssi;
+		rcv_signal_quality_t t2_quality, t6_quality;
 
 		buf[55] = 3;
 		buf[99] = 5;
@@ -4914,6 +5445,7 @@ ret_t anchor_test_111byte_ranging(void)
 								}						
 
 								T2 = g_rx_timestamp;	//获得接受到标签POLL帧时间T2
+								t2_quality = g_rcv_signal_quality;
 								g_recv_tag_id = src_id;
 								state=1;
 
@@ -4933,7 +5465,10 @@ ret_t anchor_test_111byte_ranging(void)
 								buf[1] = T2 >> 16;
 								buf[2] = T2 >> 8;
 								buf[3] = T2 & 0xff;
-								ret = make_package(RESP, Flash_Device_ID, g_recv_tag_id, ANCHOR, g_anchor_type, buf, 4, package_buf, &package_buf_len);
+								memcpy(&buf[4], (u8*)&t2_quality, sizeof(rcv_signal_quality_t));
+								len = 4 + sizeof(rcv_signal_quality_t);	
+								
+								ret = make_package(RESP, Flash_Device_ID, g_recv_tag_id, ANCHOR, g_anchor_type, buf, len, package_buf, &package_buf_len);
 								if(ret != RET_SUCCESS)
 								{
 									state=0;
@@ -4975,6 +5510,7 @@ ret_t anchor_test_111byte_ranging(void)
 								}						
 
 								T6 = g_rx_timestamp;	//获得FINAL帧接受时间T6
+								t2_quality = g_rcv_signal_quality;
 								state=3;
 
 								break;
@@ -4993,6 +5529,8 @@ ret_t anchor_test_111byte_ranging(void)
 								buf[5] = T6 >> 16;
 								buf[6] = T6 >> 8;
 								buf[7] = T6 & 0xff;
+								memcpy(&buf[8], (u8*)&t6_quality, sizeof(rcv_signal_quality_t));
+								len = 8 + sizeof(rcv_signal_quality_t);
 								
 								ret = make_package(ACK, Flash_Device_ID, g_recv_tag_id, ANCHOR, g_anchor_type, buf, 100, package_buf, &package_buf_len);
 								if(ret != RET_SUCCESS)
@@ -5036,7 +5574,7 @@ ret_t s_anchor_ranging(u32 time_out_us)
 		u8 package_buf[PACKAGE_BUF_SIZE];
 		u8 buf[BUF_SIZE] = {0};
 		u16 package_buf_len;
-		u16 buf_len;
+		u16 buf_len, len;
 		u8 dynamic_slot;
 		u8 slot;
 		u16 target_id;
@@ -5051,6 +5589,7 @@ ret_t s_anchor_ranging(u32 time_out_us)
 		u32 delay_tx_time, delay_rx_time, cur_dw1000_time;
 		static u32 T2, T3, T6;			
 		static u32 state = 0;
+		rcv_signal_quality_t t2_quality, t6_quality;
 		ret_t ret = RET_SUCCESS;
 
 		time_start = get_cur_time();
@@ -5084,7 +5623,7 @@ ret_t s_anchor_ranging(u32 time_out_us)
 							if(ret != RET_SUCCESS)
 							{
 								state=0;
-								DBG_PRINT("3-0 SA poll data rcv failed0! ret=%s\r\n",ret_type_str[ret]);
+								DBG_ERR_PRINT("2-0 SA poll data rcv failed0! ret=%s\r\n",ret_type_str[ret]);
 								break;
 							}
 							
@@ -5093,13 +5632,14 @@ ret_t s_anchor_ranging(u32 time_out_us)
 								(target_id == (Flash_Device_ID-1)) && \
 								(src_device_type == TAG) && (src_device_sub_type == TAG)))
 							{
-								DBG_PRINT("3-0 SA poll data rcv suc: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
+								DBG_PRINT("2-0 SA poll data rcv suc: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
 														ret_type_str[ret],
 														dm_comm_type_str[cmd],
 														target_id,src_id,
 														device_type_str[src_device_type],
 														anchor_type_str[src_device_sub_type],buf_len);
 								T2 = g_rx_timestamp;	//获得接受到标签POLL帧时间T2
+								t2_quality = g_rcv_signal_quality; 
 								g_recv_tag_id = src_id;
 								state=1;
 							}
@@ -5107,7 +5647,7 @@ ret_t s_anchor_ranging(u32 time_out_us)
 								(target_id == Flash_Device_ID) && (src_id == (Flash_Device_ID-1))&& \
 								(src_device_type == ANCHOR) && (src_device_sub_type == MAIN_ANCHOR) && (buf_len == 17)))
 							{	
-								DBG_PRINT("3-0 SA poll data rcv suc: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
+								DBG_PRINT("2-0 SA poll data rcv suc: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
 													ret_type_str[ret],
 													dm_comm_type_str[cmd],
 													target_id,src_id,
@@ -5119,7 +5659,7 @@ ret_t s_anchor_ranging(u32 time_out_us)
 							}
 							else
 							{
-								DBG_PRINT("3-0 SA poll data rcv fail: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
+								DBG_ERR_PRINT("2-0 SA poll data rcv fail: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
 													ret_type_str[ret],
 													dm_comm_type_str[cmd],
 													target_id,src_id,
@@ -5136,13 +5676,16 @@ ret_t s_anchor_ranging(u32 time_out_us)
 					case 1: 
 					{
 							cur_dw1000_time = dwt_readsystimestamphi32();
-							delay_tx_time = cur_dw1000_time + 7*DW1000_100US_TIMER_CNT;
+							delay_tx_time = cur_dw1000_time + 5*DW1000_100US_TIMER_CNT;
 
 							buf[0] = T2 >> 24;
 							buf[1] = T2 >> 16;
 							buf[2] = T2 >> 8;
 							buf[3] = T2 & 0xff;
-							ret = make_package(RESP, Flash_Device_ID, g_recv_tag_id, ANCHOR, g_anchor_type, buf, 4, package_buf, &package_buf_len);
+							memcpy(&buf[4], (u8*)&t2_quality, sizeof(rcv_signal_quality_t));
+							len = 4 + sizeof(rcv_signal_quality_t);
+							
+							ret = make_package(RESP, Flash_Device_ID, g_recv_tag_id, ANCHOR, g_anchor_type, buf, len, package_buf, &package_buf_len);
 							if(ret != RET_SUCCESS)
 							{
 								state=0;
@@ -5150,18 +5693,17 @@ ret_t s_anchor_ranging(u32 time_out_us)
 
 							}
 							g_get_tx_timestamp_flag = 1;
-						//	ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT);	
-							ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_DELAYED, delay_tx_time, TX_NORMAL_TIMEOUT+700);
+							ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_DELAYED, delay_tx_time, TX_NORMAL_TIMEOUT+500);
 							if(ret != RET_SUCCESS)
 							{
 								state=0;
-								DBG_ERR_PRINT("3-1 SA sa_resp data send fail! sid = %d , tid=%d \r\n",Flash_Device_ID,g_recv_tag_id);
+								DBG_ERR_PRINT("2-1 SA sa_resp data send fail! sid = %d , tid=%d \r\n",Flash_Device_ID,g_recv_tag_id);
 								break;
 							}
 
 							T3 = g_tx_timestamp;										//获得RESP帧接受时间T3
 							state=2;
-							DBG_PRINT("3-1 SA sa_resp data send suc! sid = %d , tid=%d \r\n",Flash_Device_ID,g_recv_tag_id);
+							DBG_PRINT("2-1 SA sa_resp data send suc! sid = %d , tid=%d \r\n",Flash_Device_ID,g_recv_tag_id);
 
 							break;
 							
@@ -5175,7 +5717,7 @@ ret_t s_anchor_ranging(u32 time_out_us)
 							if(ret != RET_SUCCESS)
 							{
 								state=0;
-								DBG_PRINT("3-2 SA final data rcv failed0! ret=%s\r\n",ret_type_str[ret]);
+								DBG_PRINT("2-2 SA final data rcv failed0! ret=%s\r\n",ret_type_str[ret]);
 								break;
 							}
 							
@@ -5185,7 +5727,7 @@ ret_t s_anchor_ranging(u32 time_out_us)
 								(src_device_type == TAG) && (src_device_sub_type == TAG)))
 							{
 								state=0;
-								DBG_ERR_PRINT("3-2 SA final data rcv failed1: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
+								DBG_ERR_PRINT("2-2 SA final data rcv failed1: %s , %s , tid:%d , sid:%d , %s , %s , len:%d\r\n", 
 														ret_type_str[ret],
 														dm_comm_type_str[cmd],
 														target_id,src_id,
@@ -5195,8 +5737,9 @@ ret_t s_anchor_ranging(u32 time_out_us)
 							}						
 
 							T6 = g_rx_timestamp;	//获得FINAL帧接受时间T6
+							t6_quality = g_rcv_signal_quality; 
 							state=3;
-							DBG_PRINT("3-2 SA final data rcv suc! sid=%d ,tid=%d , rx_stamp=%u\r\n",src_id,target_id,T6);
+							DBG_PRINT("2-2 SA final data rcv suc! sid=%d ,tid=%d , rx_stamp=%u\r\n",src_id,target_id,T6);
 
 							break;
 
@@ -5206,8 +5749,7 @@ ret_t s_anchor_ranging(u32 time_out_us)
 					case 3:
 					{
 							cur_dw1000_time = dwt_readsystimestamphi32() ;
-							//delay_tx_time = cur_dw1000_time + 7*DW1000_100US_TIMER_CNT;
-							delay_tx_time = cur_dw1000_time + 8*DW1000_100US_TIMER_CNT;
+							delay_tx_time = cur_dw1000_time + 5*DW1000_100US_TIMER_CNT;
 					
 							buf[0] = T3 >> 24;
 							buf[1] = T3 >> 16;
@@ -5217,26 +5759,26 @@ ret_t s_anchor_ranging(u32 time_out_us)
 							buf[5] = T6 >> 16;
 							buf[6] = T6 >> 8;
 							buf[7] = T6 & 0xff;
+							memcpy(&buf[8], (u8*)&t2_quality, sizeof(rcv_signal_quality_t));
+							len = 8 + sizeof(rcv_signal_quality_t);
 							
-							ret = make_package(ACK, Flash_Device_ID, g_recv_tag_id, ANCHOR, g_anchor_type, buf, 8, package_buf, &package_buf_len);
+							ret = make_package(ACK, Flash_Device_ID, g_recv_tag_id, ANCHOR, g_anchor_type, buf, len, package_buf, &package_buf_len);
 							if(ret != RET_SUCCESS)
 							{
 								state=0;
 								break;
 							}	
-						 	
-							//ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_IMMEDIATE, 0, TX_NORMAL_TIMEOUT);	
-							ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_DELAYED, delay_tx_time, TX_NORMAL_TIMEOUT+700);	
-														
+
+							ret = dm9000_send_data(package_buf, package_buf_len, DWT_START_TX_DELAYED, delay_tx_time, TX_NORMAL_TIMEOUT+500);														
 							if(ret != RET_SUCCESS)
 							{	
 								state=0;
-								DBG_ERR_PRINT("%s 3-3 SA sa_ack data send fail! sid = %d , tid=%d %s \r\n",ANSI_BG_RED,Flash_Device_ID,g_recv_tag_id, ANSI_NONE);
+								DBG_ERR_PRINT("2-3 SA sa_ack data send fail! sid = %d , tid=%d %s \r\n",Flash_Device_ID,g_recv_tag_id);
 								break;
 							}
 
 							ret = RET_SUCCESS;
-							DBG_PRINT("3-3 SA sa_ack data send suc! sid = %d , tid=%d \r\n",Flash_Device_ID,g_recv_tag_id);
+							DBG_PRINT("2-3 SA sa_ack data send suc! sid = %d , tid=%d \r\n",Flash_Device_ID,g_recv_tag_id);
 							state=0;
 							DBG_PRINT("%d tag meas success\r\n", g_recv_tag_id);
 							
@@ -5267,11 +5809,11 @@ ret_t major_anchor(void)
 	ret_t ret;
 	u32 time_start, time_end, nus, timeout;
 	u32 time_start1, time_end1, nus1, timeout1;
+	u32 time_out_us;
 	m_archor_state_t m_archor_state = MA_NET_ACTIVATION_ALL_TAG;
 
 	g_pos_info.anchor_sub_state = m_archor_state;
 	
-
 	time_start1 = get_cur_time();
 	g_time_start = dwt_readsystimestamphi32();
 	
@@ -5304,12 +5846,12 @@ ret_t major_anchor(void)
 		//DBG_PRINT("nus is %8x, g_timer_cnt_ms is %8x\r\n", nus, g_timer_cnt_ms);
 
 		nus = nus / DW1000_100US_TIMER_CNT; //dw1000计时器高32位每0x6180个计数大概为100us
-		if(nus > NETWORK_CYCLE_TIME)
+		if(nus > g_network_cycle_timeout_100us)
 		{	
 			time_end1 = get_cur_time();
 			nus1 = get_count_time(time_start1, time_end1);
 			major_anchor_timeout_cnt++;
-			DBG_PRINT("major_anchor timout: %d/%d (unit:100us) - to_cnt:%d\r\n", nus1,NETWORK_CYCLE_TIME,major_anchor_timeout_cnt);
+			DBG_PRINT("major_anchor timout: %d/%d (unit:100us) - to_cnt:%d\r\n", nus1,g_network_cycle_timeout_100us,major_anchor_timeout_cnt);
 			
 			dwt_forcetrxoff(); //this will clear all events
 			dwt_rxreset();
@@ -5331,11 +5873,17 @@ ret_t major_anchor(void)
 				ret = m_activation_all_tag();
 				if(ret == RET_SUCCESS)
 				{
+					g_activ_failed_cnt = 0;
 					DBG_PRINT("M4-1 MA_NET_ACTIVATION_ALL_TAG OK！\r\n");
 					m_archor_state = MA_NET_TAG_REGISTER;
 				}	
 				else
 				{
+					g_activ_failed_cnt++;
+					if((g_anchor_post_type != HEAD_ANCHOR) && (g_activ_failed_cnt > 10))
+					{
+						g_anchor_post_type = TAIL_ANCHOR;
+					}
 					DBG_ERR_PRINT("M4-1 MA_NET_ACTIVATION_ALL_TAG FAIL！\r\n");
 					m_archor_state = MA_NET_WAITE;
 					g_pos_info.anchor_sub_state = m_archor_state;
@@ -5399,7 +5947,14 @@ ret_t major_anchor(void)
 
 			case  MA_NET_WAITE:  		//等待
 			{			
-			//	DBG_PRINT("MA_NET_WAITE\r\n");
+				//DBG_PRINT("M4-5 MA_NET_WAITE\r\n");
+
+				time_out_us = (g_network_cycle_timeout_100us-nus)*100;
+				if(time_out_us > 1000)
+				{
+					dm9000_recv_data(NULL, NULL, OPEN_RECV, 0, time_out_us);
+				}
+				
 				break;
 			}
 
@@ -5425,7 +5980,9 @@ ret_t sub_anchor(void)
 	u16 slot;
 	u32 time_start, time_end, nus, timeout;
 	u32 time_start1, time_end1, nus1, timeout1;
+	u32 time_out_us;
 	u16 sub_active_fail_cnt = 0;
+	u16 g_no_have_signal_cnt = 0;
 	s_archor_state_t s_archor_state = SA_NET_ACTIVATION_ALL_TAG;
 
 	g_pos_info.anchor_sub_state = s_archor_state;
@@ -5438,7 +5995,7 @@ ret_t sub_anchor(void)
 	{
 
 		if((g_dwt_auto_tx_power_config.auto_choose_tx_power == 1) || (g_ranging_flag == 1) || g_detection_signal_flag || \
-			(g_interference_signal_flag == 1))
+			(g_interference_signal_flag == 1) || (g_dwt_auto_ant_cal.auto_ant_cal_open == 1))
 		{
 			return ret;
 		}		
@@ -5457,15 +6014,15 @@ ret_t sub_anchor(void)
 
 	//	DBG_PRINT("nus is %8x, g_timer_cnt_ms is %8x\r\n", nus, g_timer_cnt_ms);
 		nus = nus / DW1000_100US_TIMER_CNT; //dw1000计时器高32位每0x6180个计数大概为100us
-		if(nus > NETWORK_CYCLE_TIME)
+		if(nus > g_network_cycle_timeout_100us)
 		{	
 
-		  if(first_acitve_flag == 1 || Flash_Device_ID == 0)
+		  if(waite_acitve_flag == 0 || g_anchor_post_type  == HEAD_ANCHOR || Flash_Device_ID == 0)
 		  {
 		  	time_end1 = get_cur_time();
 				nus1 = get_count_time(time_start1, time_end1);
 				sub_anchor_timeout_cnt++;
-				DBG_PRINT("sub_anchor timout: %d/%d (unit:100us) - to_cnt:%d\r\n", nus1,NETWORK_CYCLE_TIME,sub_anchor_timeout_cnt);
+				DBG_PRINT("sub_anchor timout: %d/%d (unit:100us) - to_cnt:%d\r\n", nus1,g_network_cycle_timeout_100us,sub_anchor_timeout_cnt);
 				
 				dwt_forcetrxoff(); //this will clear all events
 				dwt_rxreset();
@@ -5490,23 +6047,33 @@ ret_t sub_anchor(void)
 				{	
 					DBG_PRINT("S2-1 SA_NET_ACTIVATION_ALL_TAG OK!\r\n");
 					s_archor_state = SA_NET_RANGING;
-					first_acitve_flag = 1;
-					g_pos_info.anchor_sub_state = s_archor_state;
-					
+					waite_acitve_flag = 0;
+					if(g_anchor_post_type != TAIL_ANCHOR)
+					{
+						g_anchor_post_type = MID_ARNCHOR;
+					}
+					g_no_have_signal_cnt = 0;
+					g_pos_info.anchor_sub_state = s_archor_state;									
 				}
 				else
 				{
 					DBG_ERR_PRINT("S2-1 A_NET_ACTIVATION_ALL_TAG FAIL!\r\n");
-					first_acitve_flag = 0; //让一直等待激活
-					//sub_active_fail_cnt++;
-					
-					#if 0
-					if(first_acitve_flag == 1 || Flash_Device_ID == 0)
+					waite_acitve_flag = 1; //让一直等待激活
+
+					if(ret == NO_SIGNAL)
 					{
-							s_archor_state = SA_NET_WAITE;
-							g_pos_info.anchor_sub_state = s_archor_state;							
+						g_no_have_signal_cnt++;
+						if(g_no_have_signal_cnt > 1000)
+						{
+							g_anchor_post_type = HEAD_ANCHOR;
+						}
 					}
-					#endif
+					else
+					{
+						g_no_have_signal_cnt = 0;
+						g_anchor_post_type = MID_ARNCHOR;
+					}
+					
 				}
 				break;
 			}
@@ -5514,7 +6081,7 @@ ret_t sub_anchor(void)
 			case SA_NET_RANGING:										//3.测距
 			{ 
 				DBG_PRINT("S2-2 SA_NET_RANGING START!\r\n");
-				s_anchor_ranging((NETWORK_CYCLE_TIME - nus - FREE_TIME)*100);
+				s_anchor_ranging((g_network_cycle_timeout_100us - nus)*100 - FREE_TIME);
 				DBG_PRINT("S2-2 SA_NET_RANGING SINGLE DONE!\r\n");
 				s_archor_state = SA_NET_WAITE;
 				g_pos_info.anchor_sub_state = s_archor_state;
@@ -5525,7 +6092,12 @@ ret_t sub_anchor(void)
 
 			case SA_NET_WAITE:  		//等待
 			{	
-			//	DBG_PRINT("SA_NET_WAITE\r\n");
+			//	DBG_PRINT("S2-3 SA_NET_WAITE\r\n");
+				time_out_us = (g_network_cycle_timeout_100us-nus)*100;
+				if(time_out_us > 1000)
+				{
+					dm9000_recv_data(NULL, NULL, OPEN_RECV, 0, time_out_us);
+				}
 				break;
 			}	
 	
@@ -5551,11 +6123,12 @@ ret_t idle_anchor(void)
 	u32 time_start, time_end, nus, timeout;
 	u32 time_start1, time_end1, nus1, timeout1;
 	u32 network_time_out;
+	u32 time_out;
 
 	time_start1 = get_cur_time();
 	g_time_start = dwt_readsystimestamphi32();
 
-	
+	network_time_out = g_network_cycle_timeout_100us * g_device_config.anchor_idle_num;		
 	
 	while(1)
 	{
@@ -5570,12 +6143,11 @@ ret_t idle_anchor(void)
 		}
 
 		nus = nus / DW1000_100US_TIMER_CNT; //dw1000计时器高32位每0x6180个计数大概为100us
-		if(nus < (NETWORK_CYCLE_TIME - FREE_TIME))
-		{
-			osDelay(10);				
-		}
+	//	if(nus < (g_network_cycle_timeout_100us - (FREE_TIME/100)))
+	//	{
+	//		osDelay(10);				
+	//	}
 	
-		network_time_out = NETWORK_CYCLE_TIME * g_device_config.anchor_idle_num;		
 
 		if(nus > network_time_out)
 		{	
@@ -5590,7 +6162,22 @@ ret_t idle_anchor(void)
 			g_pos_info.anchor_state = g_anchor_type;
 			break;
 		}	
-
+		else
+		{			
+			if(((network_time_out-nus)*100) > 40000)
+			{
+					time_out = 40000;
+			}
+			else
+			{
+					time_out = (network_time_out-nus)*100;
+			}
+			
+			if(time_out > 1000)
+			{
+				dm9000_recv_data(NULL, NULL, OPEN_RECV, 0, time_out);
+			}
+		}	
 		
 	}
 		
@@ -5606,10 +6193,14 @@ void init_anchor_type(void)
 	if(Flash_Device_ID == 0)
 	{
 			g_anchor_type = MAIN_ANCHOR;
+			g_anchor_post_type = HEAD_ANCHOR;
+			waite_acitve_flag = 0;
 	}
 	else
 	{		
 			g_anchor_type = SUB_ANCHOR;
+			g_anchor_post_type = MID_ARNCHOR;
+			waite_acitve_flag = 1;
 	}
 	DBG_PRINT("Device Id[%d] ,Init Anchor Type : %s\r\n",Flash_Device_ID,anchor_type_str[g_anchor_type]);
 }
@@ -5646,9 +6237,16 @@ static void mode_anchor(void)
 		else if(g_interference_signal_flag == 1)
 		{
 			interference_signal();
-		} 	
+		}
+		if(g_dwt_auto_ant_cal.auto_ant_cal_open == 1)
+		{
+			auto_cal_main_ant();
+		}			
 
-		
+		g_register_timeout_us = calc_register_timeout();
+		g_tag_ranging_timeout_us = g_device_config.max_allow_tag_num * g_device_config.ranging_slot_long;
+		g_network_cycle_timeout_100us = (ACTIVE_TAG_TIMEOUT + g_register_timeout_us + TAG_WAIT_SLOT_TIMEOUT + g_tag_ranging_timeout_us + FREE_TIME) / 100;	
+
 	
 		switch(g_anchor_type)
 		{
@@ -5672,7 +6270,7 @@ static void mode_anchor(void)
 						idle_anchor();
 						
 						break;
-				}	
+				}				
 				
 		}				
 

@@ -15,7 +15,7 @@
 #include "deca_spi.h"
 #include "deca_sleep.h"
 #include "decadriver/deca_device_api.h"
-#include "platform/port/port.h"
+#include "deca_plat/port/port.h"
 #include "drv/spi/spi_drv.h"
 #include "stm32h7xx.h"
 #include "stm32h7xx_hal_spi.h"

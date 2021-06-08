@@ -42,6 +42,7 @@ typedef enum
     GPIO_15,//LED11
     GPIO_16,//LED12
     GPIO_17,//LED15
+    GPIO_18,//LED9
     GPIO_NUM,
 }gpio_type_num;
 
