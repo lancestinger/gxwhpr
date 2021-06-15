@@ -390,7 +390,7 @@ void show_position_para(void)
 		GLOBAL_PRINT(("tag_h: %lf\r\n", g_device_config.tag_h));
 		GLOBAL_PRINT(("t2wall_d: %lf\r\n", g_device_config.t2wall_actual_dist));	
 		GLOBAL_PRINT(("t2wall_thr: %lf\r\n", g_device_config.t2wall_threshold));
-		GLOBAL_PRINT(("t2wall_fl_num: %lf\r\n", g_device_config.t2wall_fl_num));
+		GLOBAL_PRINT(("t2wall_fl_num: %d\r\n", g_device_config.t2wall_fl_num));
 		GLOBAL_PRINT(("sig_qa_thr: %lf\r\n", g_device_config.sig_qa_thr));		
 		GLOBAL_PRINT(("ref_coord:latitude %lf, longitude %lf, height %lf\r\n", g_device_config.ref_position[0], g_device_config.ref_position[1], g_device_config.ref_position[2]));			
 	}

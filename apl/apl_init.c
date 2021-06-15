@@ -111,7 +111,7 @@ void apl_init(void)
 	iotclient_init();
 	Ntrip_apl_Init();
 //	EH_uwb_apl_init();
-	Imu_apl_init();
+	//Imu_apl_init();
 	Server_apl_init();
 	UWB_apl_init();
 	

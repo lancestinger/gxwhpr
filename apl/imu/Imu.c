@@ -199,8 +199,8 @@ static void _Imu_thread(void * arg)
 	//设置加速度计和陀螺仪的三轴零偏
 	ins_set_ag_bias(XL_bias,GY_bias);
 	
-	DBG_IMU_Print("\r\n加速度计三轴零偏:%6.4f,%6.4f,%6.4f\r\n",XL_bias[0],XL_bias[1],XL_bias[2]);
-	DBG_IMU_Print("\r\n陀螺仪三轴零偏:%6.4f,%6.4f,%6.4f\r\n",GY_bias[0],GY_bias[1],GY_bias[2]);
+	//DBG_IMU_Print("\r\n加速度计三轴零偏:%6.4f,%6.4f,%6.4f\r\n",XL_bias[0],XL_bias[1],XL_bias[2]);
+	//DBG_IMU_Print("\r\n陀螺仪三轴零偏:%6.4f,%6.4f,%6.4f\r\n",GY_bias[0],GY_bias[1],GY_bias[2]);
 	
 	while(1)
 	{
@@ -209,7 +209,7 @@ static void _Imu_thread(void * arg)
 		while(NMEA_Data_ptr.GGA_DATA_READY_IMU !=TRUE || NMEA_Data_ptr.RMC_DATA_READY_IMU !=TRUE)
 		{
 			//waiting for flag of NMEA parse Over//
-			delay_ms(5);
+			delay_ms(20);
 			Time_out = osKernelGetTickCount();
 			if((Time_out-Time_old) >22000)
 			{
@@ -223,8 +223,8 @@ static void _Imu_thread(void * arg)
 		
 		IN_OUT_Init();//每次惯导计算清空输入输出结构体
 		
-		DBG_IMU_Print("\r\n加速度计三轴零偏:%6.4f,%6.4f,%6.4f\r\n",XL_bias[0],XL_bias[1],XL_bias[2]);
-		DBG_IMU_Print("\r\n陀螺仪三轴零偏:%6.4f,%6.4f,%6.4f\r\n",GY_bias[0],GY_bias[1],GY_bias[2]);
+		//DBG_IMU_Print("\r\n加速度计三轴零偏:%6.4f,%6.4f,%6.4f\r\n",XL_bias[0],XL_bias[1],XL_bias[2]);
+		//DBG_IMU_Print("\r\n陀螺仪三轴零偏:%6.4f,%6.4f,%6.4f\r\n",GY_bias[0],GY_bias[1],GY_bias[2]);
 
 		Delta_1PPS = UBX_1PPS_time - Old_1PPS;
 		
@@ -341,6 +341,7 @@ static void _Imu_thread(void * arg)
 		IMU_Time = 0;
 		locat_Time = 0;
 		Fusion_Time = 0;
+		delay_ms(5);
 		if(!flag){
 			HAL_GPIO_WritePin(GPIOD,GPIO_PIN_0,GPIO_PIN_SET);
 			flag = TRUE;
@@ -370,6 +371,7 @@ static void _Imu_thread(void * arg)
 
 static void _Imu_data_thread(void * arg)
 {
+	//static int miss_flag=0;
 	while(1)
 	{
 		if(XL_DRDY)
@@ -389,6 +391,8 @@ static void _Imu_data_thread(void * arg)
 			Imu_Mag_data_get();
 			MAG_DRDY = FALSE;
 		}
+
+		delay_ms(5);
 	}
 }
 
@@ -854,8 +858,9 @@ void Imu_Mag_data_get(void)
 {
 	static uint8_t k=0;
 	uint8_t i=0;
-	uint8_t emb_sh[18]={0};
+	static uint8_t emb_sh[18]={0};
 
+	GLOBAL_MEMSET(emb_sh, 0x0, 18);
 	if(k>IMU_DATA_MAX_NUM-1)
 	{ 
 	  for(i=0;i<k-1;i++)

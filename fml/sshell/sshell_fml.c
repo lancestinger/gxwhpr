@@ -1541,9 +1541,8 @@ void _sshell_thread(void* arg)
 		}
 		else
 		{
-			delay_ms(5);
+			delay_ms(10);//Ïß³Ì¿Õ×ª
 		}
-		//osThreadYield();
 	}
 }
 

@@ -31,6 +31,7 @@ IOT_Device_t iotRTCMDev;
 IOT_Device_t iotCmdDev;
 
 int MQTT_OFF_LINE=FALSE;
+int MQTT_RCV_OFF=FALSE;
 osThreadId_t thread_iotclient_rcv_id = 0;
 U8 RTCM_SWITCH = NTRIP_GET_RTCM;
 
@@ -374,6 +375,7 @@ static void iotclient_susb_resum(U8 flag)
 		
 		if(status == osOK)
 		{
+			MQTT_RCV_OFF = TRUE;
 			DBG_MQTT_Print("Stop MQTT rcv OK!\r\n");
 		}
 		else
@@ -386,6 +388,7 @@ static void iotclient_susb_resum(U8 flag)
 		status = osThreadResume(thread_iotclient_rcv_id);
 		if(status == osOK)
 		{
+			MQTT_RCV_OFF = FALSE;
 			DBG_MQTT_Print("Resume MQTT rcv OK!\r\n");
 		}
 		else
@@ -500,10 +503,8 @@ static void _iotclient_rcv_thread(void* arg)
         }
         else
         {
-            // WARN_PRINT(("rcv thread idle!!!\r\n"));
-            delay_ms(500);
+            delay_ms(500);//未初始化完成，线程空转
         }
-		//osThreadYield();
     }
 }
 
@@ -532,18 +533,17 @@ static void _iotclient_monitor_thread(void* arg)
 
     while(1)
     {
-        delay_ms(200);
 		retry_cnt = 0;
 		//对iotDev主题进行socket连接与订阅
 		while(iotDev.sta != IOT_STA_IDEL)
 		{	
-			delay_ms(300);
 	        switch (iotDev.sta)//日志消息订阅初始化
 	        {
 	            case IOT_STA_INIT:
 					//IOT初始化，关闭MQTT上报心跳包，挂起接收线程
 					MQTT_OFF_LINE = TRUE;
-					iotclient_susb_resum(SUSBEND_RCV);
+					if(MQTT_RCV_OFF==FALSE)
+						iotclient_susb_resum(SUSBEND_RCV);
 					
 	                iotDev_reset(&iotDev);
 	                iotDev.sta = IOT_STA_MQTTCONNECT;
@@ -600,13 +600,13 @@ static void _iotclient_monitor_thread(void* arg)
 	            default:
 	            	break;
 	        }
+	        delay_ms(100);
 		}
 		
 		retry_cnt=0;
 		//对RTCM主题进行socket连接与订阅
 		while((iotRTCMDev.sta != IOT_STA_IDEL)&&(iotDev.sta == IOT_STA_IDEL))
 		{
-			delay_ms(300);
 			switch(iotRTCMDev.sta)//RTCM消息订阅初始化
 			{
 				case IOT_STA_INIT:
@@ -664,13 +664,13 @@ static void _iotclient_monitor_thread(void* arg)
 	            default:
 	            	break;
 			}
+			delay_ms(100);
 		}
 
 		retry_cnt=0;
 		//对Cmd主题进行socket连接与订阅
 		while((iotCmdDev.sta != IOT_STA_IDEL)&&(iotDev.sta == IOT_STA_IDEL))
 		{
-			delay_ms(300);
 			switch(iotCmdDev.sta)//CMD消息订阅初始化
 			{
 				case IOT_STA_INIT:
@@ -736,15 +736,17 @@ static void _iotclient_monitor_thread(void* arg)
 	            default:
 	            	break;
 			}
+			delay_ms(100);
 		}
 		//MQTT连接与订阅完成，恢复上报消息与接收线程
 		if(MQTT_OFF_LINE == TRUE&&iotDev.sta == IOT_STA_IDEL)
 		{
 			DBG_MQTT_Print("订阅MQTT消息完成!!!\r\n");
-			iotclient_susb_resum(RESUME_RCV);
+			if(MQTT_RCV_OFF==TRUE)
+				iotclient_susb_resum(RESUME_RCV);
 			MQTT_OFF_LINE = FALSE;
 		}
-		//osThreadYield();
+		delay_ms(200);
     }
 }
 

@@ -60,6 +60,7 @@ extern IOT_Device_t iotCmdDev;
 extern IOT_Device_t iotRTCMDev;
 
 extern int MQTT_OFF_LINE;
+extern int MQTT_RCV_OFF;
 extern osThreadId_t thread_iotclient_rcv_id;
 
 /*≥ı ºªØ*/

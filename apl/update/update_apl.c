@@ -234,6 +234,7 @@ static void _update_thread(void* arg)
                     fdelete(ARM_UPLOAD_FILE_NAME, NULL);	//删除文件
                     frename(ARM_UPLOAD_FILE_NAME_TEMP, ARM_UPLOAD_FILE_NAME);
 					NOTE_PRINT(("升级文件为ARM!!!!\r\n"));
+					delay_ms(500);
                     rtc_bakup_write(BKUP_BOOT_UPGRADE);
                     upload_hpr_update_feedback_to_server(serOriData, E_UPDATE_Success);
                 }
@@ -285,8 +286,6 @@ static void _update_thread(void* arg)
             break;
         }
         delay_ms(1000);
-		//osThreadYield();
-		//GLOBAL_PRINT(("updateSta: %d\r\n",update_handle_g.updateSta));
 	}
 }
 

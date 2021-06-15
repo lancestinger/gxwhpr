@@ -9,7 +9,7 @@
 #include "fml/gnss/NMEA.h"
 #include "fml/iotclient/iotclient.h"
 
-static U64 thread_Ntrip_stk[SIZE_4K / 4];
+static U64 thread_Ntrip_stk[SIZE_4K / 8];
 static const osThreadAttr_t thread_Ntrip_attr = {
   .stack_mem  = &thread_Ntrip_stk[0],
   .stack_size = sizeof(thread_Ntrip_stk),
@@ -302,7 +302,7 @@ static void _Ntrip_thread(void* arg)
 		}	
 		else
 		{
-			delay_ms(10);
+			delay_ms(10);//NMEA未获取时，线程空转
 		}
 
 		if(GGA_OLD_FLAG == TRUE)//1秒定时器，用于NMEA未连续接收时的旧消息发送周期定时
@@ -355,9 +355,7 @@ static void _Ntrip_monitor(void* arg)
 	static osStatus_t status=0;
 
 	while(1)
-	{
-		delay_ms(500);
-		
+	{	
 		switch(Ntrip_State)
 		{
 			case NTRIP_INIT:
@@ -408,7 +406,7 @@ static void _Ntrip_monitor(void* arg)
 			default:
 				break;
 		}
-		//osThreadYield();
+		delay_ms(500);
 	}
 }
 

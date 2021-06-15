@@ -49,7 +49,7 @@ RNGBUF_t * receiver_rngbuf = NULL;  //用于接收机调试
 
 
 static RNGBUF_t * sshell_rngbuf = NULL;	//shell接收缓存
-static U64 thread_print_stk[SIZE_1K/ 8];
+static U64 thread_print_stk[SIZE_2K/ 8];
 static const osThreadAttr_t thread_print_attr = {
   .stack_mem  = &thread_print_stk[0],
   .stack_size = sizeof(thread_print_stk),
@@ -222,16 +222,10 @@ static void _print_thread(void *arg)
 		{
 			uart_send_data(DEBUG_PRINT_COM, print_tmpbuf, len);
 		}
-        // else if((g_dbg_out_usart_model==DBG_OUT_USART_RECEIVER_MODEL)
-        //             &&((len = rng_get_buf(receiver_rngbuf, (char*)receiver_tmpbuf, PRINT_BUFF_LEN))>0))
-        // {
-        //     uart_send_data(DEBUG_PRINT_COM, receiver_tmpbuf, len);
-        // }
 		else
 		{
-			delay_ms(2);
+			delay_ms(2);//线程空转
 		}
-		//osThreadYield();
 	}
 }
 
