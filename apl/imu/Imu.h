@@ -6,7 +6,7 @@
 
 #define IMU_DATA_MAX_NUM    50
 
-#define NORMAL_G            9.8066
+#define NORMAL_G            9.80665
 
 //惯导初始化自校准结构体
 typedef struct

@@ -115,8 +115,8 @@ static const osThreadAttr_t thread_Imu_data_attr = {
 
 //-----------------------------------------------------------------------------//
 
-static F32 XL_bias[3] = {-74.42,-11.41,993.87};//范例值
-static F32 GY_bias[3] = {350,-752.5,-315};
+static F32 XL_bias[3] = {0,0,0};//-5.7   -10.5   997.0
+static F32 GY_bias[3] = {0,0,0};//304  -712 -304
 
 //-----------------------------------------------------------------------------//
 
@@ -187,13 +187,13 @@ static void _Imu_thread(void * arg)
 	uint8_t  Veloc_valid = 0;
 	static U8 flag = FALSE;
 	//U8 Time_out_flag = 0;
-
+/*
 	while(sysup_seconds_g<30)
 	{
 		DBG_IMU_Print("IMU NOW Self Calibriation!!\r\n");
 		delay_ms(1000);
 	}
-
+*/
 	SELF_CALI_OVER = TRUE;//自校准结束标志
 	
 	//设置加速度计和陀螺仪的三轴零偏
@@ -211,7 +211,7 @@ static void _Imu_thread(void * arg)
 			//waiting for flag of NMEA parse Over//
 			delay_ms(20);
 			Time_out = osKernelGetTickCount();
-			if((Time_out-Time_old) >22000)
+			if((Time_out-Time_old) >20000)
 			{
 				Time_out = 0;
 				DBG_IMU_Print("IMU waiting for NMEA Time out!!\r\n");
@@ -413,6 +413,13 @@ void Self_cali_Init(void)
 	GLOBAL_MEMSET(&Imu_self_cali,0x0,sizeof(Self_calib));
 	GLOBAL_MEMSET(&XL_bias,0x0,sizeof(float)*3);
 	GLOBAL_MEMSET(&GY_bias,0x0,sizeof(float)*3);
+
+	XL_bias[0] = ( -5.7/1000)*NORMAL_G;
+	XL_bias[1] = (-10.5/1000)*NORMAL_G;
+	XL_bias[2] = (997/1000)*NORMAL_G;
+	GY_bias[0] = 304*DEG2RAD/1000;
+	GY_bias[1] = -712*DEG2RAD/1000;
+	GY_bias[2] = -304*DEG2RAD/1000;
 }
 
 
@@ -922,6 +929,7 @@ void Imu_Gy_data_get(void)
 	Imu_Gy[k].z = angular_rate_mdps[2]*DEG2RAD/1000;
 
 	//For self init//
+	/*
 	if(sysup_seconds_g<30 && SELF_CALI_OVER == FALSE)
 	{
 		Imu_self_cali.SUM_Gy_x += Imu_Gy[k].x;
@@ -932,7 +940,7 @@ void Imu_Gy_data_get(void)
 		GY_bias[1] = Imu_self_cali.SUM_Gy_y/Imu_self_cali.Num_Gy;
 		GY_bias[2] = Imu_self_cali.SUM_Gy_z/Imu_self_cali.Num_Gy;
 	}
-
+	*/
 	k++;
 	Gy_num = k;	
 }
@@ -971,6 +979,7 @@ void Imu_Acce_data_get(void)
 	Imu_Accel[k].z = (acceleration_mg[2]/1000)*NORMAL_G;
 
 	//For self init//
+	/*
 	if(sysup_seconds_g<30 && SELF_CALI_OVER == FALSE)
 	{
 		Imu_self_cali.SUM_Accel_x += Imu_Accel[k].x;
@@ -981,7 +990,7 @@ void Imu_Acce_data_get(void)
 		XL_bias[1] = Imu_self_cali.SUM_Accel_y/Imu_self_cali.Num_Accel;
 		XL_bias[2] = Imu_self_cali.SUM_Accel_z/Imu_self_cali.Num_Accel;
 	}
-	
+	*/
 	k++;
 	Accel_num = k;
 }

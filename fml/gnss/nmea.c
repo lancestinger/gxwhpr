@@ -326,7 +326,7 @@ static void _gnss_parse_gga(IN U8 *data_ptr,IN U32 len)
     //U16 anten_status = 0;
 #if 1
     /* 取定位信息 */
-	DBG_SERVER_Print("%s",data_ptr);
+	DBG_IMU_Print("%s",data_ptr);
 	GLOBAL_MEMSET(NMEA_buf.RX_pData,0x0,RX_LEN);
 	GLOBAL_MEMCPY(NMEA_buf.RX_pData,data_ptr,len);
 	NMEA_buf.RX_flag = TRUE;
@@ -530,7 +530,7 @@ static void _gnss_parse_rmc(IN U8 *data_ptr,IN U32 len)
     U8 str_cnt = 0;
 	U32 tmp_int[10];
 
-	DBG_SERVER_Print("%s",data_ptr);
+	DBG_IMU_Print("%s",data_ptr);
 	GLOBAL_MEMSET(NMEA_buf.RX_pData,0x0,RX_LEN);
 	GLOBAL_MEMCPY(NMEA_buf.RX_pData,data_ptr,len);
 	NMEA_buf.RX_flag = TRUE;
