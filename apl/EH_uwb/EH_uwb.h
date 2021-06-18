@@ -2,12 +2,15 @@
 #define __UWB_H__
 
 #include "EH_uwb_parse.h"
+#include "apl/imu/Coordi_transfer.h"
 
 
 #define filterNUM 5
 
 extern uint8_t UWB_SWICH;
 extern uint8_t Least_fail;
+extern WGS ORIGN_eh;
+extern ECEF ORIGN_eh_ECEF;
 
 void uwb_run(void);
 void uwb_parse_run(void);
@@ -48,6 +51,14 @@ typedef struct
 	int in;
 	int out;
 }NumRING;
+
+typedef enum
+{
+    EH_UWB_INIT        = 0,            /* EH_UWB初始化 */
+    EH_UWB_CONNECT     = 1,            /* EH_UWB连接服务器 */
+    EH_UWB_IDEL        = 2,            /* EH_UWB空闲 */
+}EH_UWB_WorkState_t;
+
 extern Vectinfo  uwbinfo;
 
 void EH_uwb_apl_init(void);

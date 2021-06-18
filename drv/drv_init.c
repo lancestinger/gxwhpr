@@ -162,7 +162,7 @@ void drv_init(void)
 	sys_para_init();
 	adc_drv_init();
 	netInitialize();
-	socket_udp_drv_init(SOCKET_MS);
+	socket_udp_drv_init(SOCKET_3);
 	gpio_enable_irq();
 	evt_id = osEventFlagsNew(NULL);
 

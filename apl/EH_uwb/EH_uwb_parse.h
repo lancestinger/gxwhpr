@@ -77,7 +77,7 @@ typedef struct{
 	Vector3 tag;
 }UWBParse;
 
-extern apdist aplist[];
+extern apdist aplist[4];
 extern uint8_t Drop_Sign;
 extern uint16_t Drop_Num;
 

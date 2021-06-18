@@ -102,7 +102,7 @@ static const uart_drv_t uart_drv_cfg[UART_INIT_NUM] =
 		&uart3_handle,
 		UART_MODE_TX_RX,
 		USART3,
-        230400,
+        460800,//EH_UWB
 		UART_WORDLENGTH_8B,
 		UART_STOPBITS_1,
 		UART_PARITY_NONE,
@@ -125,19 +125,19 @@ static const uart_drv_t uart_drv_cfg[UART_INIT_NUM] =
 		GPIO_AF7_USART3,
 
 		/*中断配置*/
-		UART_INTR_RX,
+		UART_INTR_IDLE,//EH_UWB
 		USART3_IRQn,
         5,
         1,
       
 		/*发送DMA配置*/
-		UART_DMA_TX_ENABLE,
+		UART_DMA_TX_DISABLE,
 		&uart3_dma_tx_handle,
 		DMA1_Stream5,
 		DMA_REQUEST_USART3_TX,
 
 	  	/*接收DMA配置*/
-		UART_DMA_RX_DISABLE,
+		UART_DMA_RX_ENABLE,//EH_UWB
 		&uart3_dma_rx_handle,
 		DMA1_Stream4,
 		DMA_REQUEST_USART3_RX,
@@ -398,6 +398,39 @@ static void _cfg_uart_dma(DMA_HandleTypeDef* uart_tx_dma_handle, UART_HandleType
     HAL_DMA_Init(uart_tx_dma_handle);
 } 
 
+static void _cfg_uart_dma_rcv(DMA_HandleTypeDef* uart_rx_dma_handle, UART_HandleTypeDef* uart_handle, DMA_Stream_TypeDef *dma_stream, U32 dma_request)
+{ 
+
+	if((U32)dma_stream>(U32)DMA2)//得到当前stream是属于DMA2还是DMA1
+	{
+        __HAL_RCC_DMA2_CLK_ENABLE();//DMA2时钟使能	
+	}else 
+	{
+        __HAL_RCC_DMA1_CLK_ENABLE();//DMA1时钟使能 
+	}
+    
+    //Rx DMA配置
+    uart_rx_dma_handle->Instance=dma_stream;                            //数据流选择
+    uart_rx_dma_handle->Init.Request=dma_request;                       //通道选择
+    uart_rx_dma_handle->Init.Direction=DMA_PERIPH_TO_MEMORY;             //存储器到外设
+    uart_rx_dma_handle->Init.PeriphInc=DMA_PINC_DISABLE;                 //外设非增量模式
+    uart_rx_dma_handle->Init.MemInc=DMA_MINC_ENABLE;                     //存储器增量模式
+    uart_rx_dma_handle->Init.PeriphDataAlignment=DMA_PDATAALIGN_BYTE;    //外设数据长度:8位
+    uart_rx_dma_handle->Init.MemDataAlignment=DMA_MDATAALIGN_BYTE;       //存储器数据长度:8位
+    uart_rx_dma_handle->Init.Mode=DMA_NORMAL;                            //外设流控模式
+    uart_rx_dma_handle->Init.Priority=DMA_PRIORITY_MEDIUM;               //中等优先级
+    uart_rx_dma_handle->Init.FIFOMode=DMA_FIFOMODE_DISABLE;              
+    uart_rx_dma_handle->Init.FIFOThreshold=DMA_FIFO_THRESHOLD_FULL;      
+    uart_rx_dma_handle->Init.MemBurst=DMA_MBURST_SINGLE;                 //存储器突发单次传输
+    uart_rx_dma_handle->Init.PeriphBurst=DMA_PBURST_SINGLE;              //外设突发单次传输
+
+	HAL_DMA_DeInit(uart_rx_dma_handle);
+    HAL_DMA_Init(uart_rx_dma_handle);
+
+	__HAL_LINKDMA(uart_handle, hdmarx, *uart_rx_dma_handle);    //将DMA与USART1联系起来
+} 
+
+
 /*****************************************************************************
  Prototype    : HAL_UART_MspInit
  Description  : HAL串口初始化会调用该函数
@@ -493,6 +526,18 @@ void uart_drv_init(void)
 		uart_drv_cfg[i].uart_handle->Init.HwFlowCtl = uart_drv_cfg[i].hw_flow;
 		uart_drv_cfg[i].uart_handle->Init.Mode = uart_drv_cfg[i].uart_mode;
 		HAL_UART_Init(uart_drv_cfg[i].uart_handle);
+
+		/*DMA发送配置*/
+		if(uart_drv_cfg[i].dma_tx_enable == UART_DMA_TX_ENABLE)
+		{
+			_cfg_uart_dma(uart_drv_cfg[i].dma_tx_handle, uart_drv_cfg[i].uart_handle, uart_drv_cfg[i].dma_tx_stream, uart_drv_cfg[i].dma_tx_request);
+		}
+		
+		/*DMA接收配置*/
+		if(uart_drv_cfg[i].dma_rx_enable == UART_DMA_RX_ENABLE)
+		{
+			_cfg_uart_dma_rcv(uart_drv_cfg[i].dma_rx_handle, uart_drv_cfg[i].uart_handle, uart_drv_cfg[i].dma_rx_stream, uart_drv_cfg[i].dma_rx_request);
+		}
 		
 		/*中断配置*/
 		if(uart_drv_cfg[i].irq_type != UART_INTR_NONE)
@@ -517,7 +562,7 @@ void uart_drv_init(void)
 				}
 				case UART_INTR_IDLE:
 				{
-					//__HAL_UART_ENABLE_IT(uart_drv_cfg[i].uart_handle,UART_IT_IDLE);
+					__HAL_UART_ENABLE_IT(uart_drv_cfg[i].uart_handle,UART_IT_IDLE);
 					break;
 				}
 				default:
@@ -534,20 +579,11 @@ void uart_drv_init(void)
 		{
 			//HAL_UART_Receive_IT(uart_drv_cfg[i].uart_handle, (U8 *)rx_buf, 1);//
 		}*/
-		/*DMA发送配置*/
-		if(uart_drv_cfg[i].dma_tx_enable == UART_DMA_TX_ENABLE)
-		{
-			_cfg_uart_dma(uart_drv_cfg[i].dma_tx_handle, uart_drv_cfg[i].uart_handle, uart_drv_cfg[i].dma_tx_stream, uart_drv_cfg[i].dma_tx_request);
-		}
+
 		
-		/*DMA接收配置*/
-		if(uart_drv_cfg[i].dma_rx_enable == UART_DMA_RX_ENABLE)
-		{
-			//_cfg_uart_dma(uart_drv_cfg[i].dma_rx_handle, uart_drv_cfg[i].uart_handle, uart_drv_cfg[i].dma_rx_stream, uart_drv_cfg[i].dma_rx_request);
-		}
-		//DMA_Data_send(UART_COM1, "hello\r\n", 7);
-		//HAL_UART_Receive_DMA(&uart3_handle, UwbUart.RX_pData, RX_LEN);
 	}
+	
+	HAL_UART_Receive_DMA(&uart3_handle, UwbUart.RX_pData, RX_LEN);//EH_UWB
 	GLOBAL_PRINT((ANSI_DARK_RED"\r\n\r\n\r\n%s system is power on!!!!!\r\n"ANSI_NONE"", PROJECT_NAME));
 	GLOBAL_PRINT(("串口初始化完成!!!!!\r\n"))
 }
@@ -765,6 +801,8 @@ void USART1_IRQHandler(void)
 //串口3中断服务程序
 void USART3_IRQHandler(void)                	
 { 
+
+#if 0
 	if((__HAL_UART_GET_FLAG(&uart3_handle,UART_FLAG_RXNE)!=RESET))
 		{
 			U8 temp8 = USART3->RDR;
@@ -786,7 +824,12 @@ void USART3_IRQHandler(void)
 			rcv_char = rcv_char;
 		}
 		HAL_UART_IRQHandler(&uart3_handle);
+#else
 
+	HAL_UART_IRQHandler(&uart3_handle);
+	HAL_UART_IDLECallback(&uart3_handle);
+	
+#endif
 
 } 
 
@@ -912,10 +955,18 @@ void UART7_IRQHandler(void)
 } 
 #endif
 
+void DMA1_Stream4_IRQHandler(void)
+{
+  
+  HAL_DMA_IRQHandler(&uart3_dma_rx_handle);
+ 
+}
+
+
 void HAL_UART_IDLECallback(UART_HandleTypeDef *huart)
 {
 	//uint32_t temp;
-/*	
+	
 	if(huart->Instance == USART3){
 		if(__HAL_UART_GET_FLAG(huart,UART_FLAG_IDLE) != RESET){ 	
 			//__HAL_DMA_DISABLE(huart->hdmarx);
@@ -928,7 +979,7 @@ void HAL_UART_IDLECallback(UART_HandleTypeDef *huart)
 			HAL_UART_Receive_DMA(huart, UwbUart.RX_pData,RX_LEN);
 		}
 	}
-	*/
+	
 /*
 	if(huart->Instance == UART5){		
 	

@@ -10,6 +10,7 @@
 #include "fml/uart/uart_fml.h"
 #include "drv/rngbuf/rngbuf.h"
 #include "apl/imu/Coordi_transfer.h"
+#include "apl/EH_uwb/EH_uwb.h"
 
 Server_Data server_Data;
 Pos_count Pos_time;
@@ -687,6 +688,84 @@ U8 Cmd_parse_data(U8* buf, int len)
 
 }
 
+/*****************************************************************************
+ 函 数 名  : TCP_preallocated
+ 功能描述  : TCP上报数据传输函数
+ 输入参数  : cJSON *root  
+ 输出参数  : 无
+ 返 回 值  : int
+ 调用函数  : 
+ 被调函数  : 
+ 
+ 修改历史      :
+  1.日    期   : 2021年4月
+    作    者   : zxf
+    修改内容   : 创建
+
+*****************************************************************************/
+static int TCP_preallocated(cJSON *root)
+{
+    /* declarations */
+    char *out = NULL;
+    char *buf = NULL;
+    int len = 0;
+	int len_out = 0;
+	int Over_time_send=0;
+
+    /* formatted print */
+    out = cJSON_PrintUnformatted(root);//cJSON_Print
+
+    /* create buffer to succeed */
+    /* the extra 5 bytes are because of inaccuracies when reserving memory */
+	len_out = strlen(out);
+    len = strlen(out)+5;
+    buf = (char*)malloc(len);
+    if (buf == NULL)
+    {
+        WARN_PRINT(("Failed to allocate memory.\n"));
+    }
+
+    /* Print to buffer */
+    if (!cJSON_PrintPreallocated(root, buf, (int)len, 0)) 
+    {
+        WARN_PRINT(("cJSON_PrintPreallocated failed!\n"));
+        if(strcmp(out, buf) != 0)
+        {
+            WARN_PRINT(("cJSON_PrintPreallocated not the same as cJSON_Print!\n"));
+            WARN_PRINT(("cJSON_Print result:\n%s\n", out));
+            WARN_PRINT(("cJSON_PrintPreallocated result:\n%s\n", buf));
+        }
+        free(out);
+        free(buf);
+        return -1;
+    }
+    GLOBAL_PRINT(("json str:%s\r\n",buf));
+
+	while(0 >= socket_TCP_send_msg(SOCKET_4,(U8*)out,len_out,0))
+	{
+		Over_time_send++;
+		GLOBAL_PRINT(("Sending EH_UWB...\r\n"));
+		delay_ms(200);
+		if(Over_time_send>=3)
+		{
+			break;
+		}
+	}
+	if(Over_time_send >= 3)
+	{
+		Over_time_send = 0;
+		GLOBAL_PRINT(("Send EH_UWB error, Socket 4 Restart!!\r\n"));
+		free(out);
+        free(buf);
+        return -1;
+	}
+    
+    free(out);
+    free(buf);
+    return 0;
+}
+
+
 
 /*****************************************************************************
  函 数 名  : UDP_preallocated
@@ -803,6 +882,60 @@ U8 UDP_upload_hpr_location(void)
     return TRUE;
 
 }
+
+U8 EH_UWB_upload(netStruct netbuf)
+{
+	cJSON * pJsonRoot = NULL;
+	cJSON * pSubJson = NULL;	  // 创建子节点
+	cJSON * pSSubJson = NULL;	   //创建子节点
+	cJSON * pSSSubJson = NULL;		//创建数组
+	cJSON * pSSSSubJson = NULL; //在数组上添加对象
+
+
+	pJsonRoot = cJSON_CreateObject();
+	cJSON_AddStringToObject(pJsonRoot, "version", "1.2");
+	cJSON_AddNumberToObject(pJsonRoot, "type", netbuf.type);
+	cJSON_AddNumberToObject(pJsonRoot, "tagid", (READ_REG(*((uint32_t *)0x1FF1E800)))/1000+520);
+	
+    pSubJson = cJSON_CreateObject();
+    cJSON_AddNumberToObject(pSubJson,"x",netbuf.uwb->uwbParse.tag.x);
+    cJSON_AddNumberToObject(pSubJson,"y",netbuf.uwb->uwbParse.tag.y);
+	cJSON_AddNumberToObject(pSubJson,"z",netbuf.uwb->uwbParse.tag.z);
+    cJSON_AddItemToObject(pJsonRoot,"tag",pSubJson);  // 子节点的“键”，子节点挂在父节点上
+
+    pSSubJson = cJSON_CreateObject();
+    cJSON_AddNumberToObject(pSSubJson, "x", ORIGN_eh_ECEF.x);//-2776227.23743292
+    cJSON_AddNumberToObject(pSSubJson, "y", ORIGN_eh_ECEF.y);//4760647.343173147
+    cJSON_AddNumberToObject(pSSubJson, "z", ORIGN_eh_ECEF.z);//3200098.2119018384
+    cJSON_AddItemToObject(pJsonRoot, "origin", pSSubJson);  // 子节点的“键”，子节点挂在父节点上
+
+    pSSSubJson = cJSON_CreateArray();
+    cJSON_AddItemToObject(pJsonRoot, "apInfo", pSSSubJson);  // 数组在父节点上  
+    
+	for (int i = 0; i < netbuf.uwb->uwbParse.uwbdata.data.num; ++i)
+	{
+		pSSSSubJson = cJSON_CreateObject();
+		
+		cJSON_AddNumberToObject(pSSSSubJson, "id", netbuf.uwb->uwbParse.uwbdata.data.info[i].addr);
+		cJSON_AddNumberToObject(pSSSSubJson, "dist", netbuf.uwb->uwbParse.uwbdata.data.info[i].dist/100.0);
+		cJSON_AddNumberToObject(pSSSSubJson, "confidence", netbuf.uwb->uwbParse.uwbdata.data.info[i].deg);
+		cJSON_AddNumberToObject(pSSSSubJson, "rssi", netbuf.uwb->uwbParse.uwbdata.data.info[i].RSSI);
+		cJSON_AddItemToArray(pSSSubJson, pSSSSubJson);
+	}
+	
+    /* Print to text */
+    if(TCP_preallocated(pJsonRoot) != 0)
+    {
+        cJSON_Delete(pJsonRoot);
+		
+        return FALSE;
+    }
+    cJSON_Delete(pJsonRoot);
+	
+	return TRUE;
+
+}
+
 
 
 /*****************************************************************************
