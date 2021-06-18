@@ -151,7 +151,7 @@ UWB微秒（UUS）到设备时间单位（DTU，约15.65 ps）的转换系数。
 
 #define MAX_TAG_NUM											50
 #define SLOT_LONG												300  	  //单位微秒
-#define RANGING_SLOT_LONG								2300	  //单位微秒
+#define RANGING_SLOT_LONG								2500	  //单位微秒
 
 #define ACTIVE_TAG_TIMEOUT							10000		//激活标签超时时间，单位1us
 #define TAG_WAIT_SLOT_TIMEOUT						5000	  //标签等待时隙表超时时间，单位1us
@@ -320,7 +320,7 @@ void reset_position_default_para(void)
 		g_device_config.chan = 2;
 		g_device_config.on_left = 0;
 		g_device_config.t2wall_actual_dist = 0;
-		g_device_config.sig_qa_thr = 10;
+		g_device_config.sig_qa_thr = 17;
 		g_device_config.t2wall_fl_num = 2;		
 		g_device_config.t2wall_threshold = 20; 
 		g_device_config.ref_position[0] = 0; 
@@ -559,7 +559,7 @@ static void rx_ok_cb(const dwt_callback_data_t *cb_data)
 		else
 		{
 		
-			//DBG_ERR_PRINT("rx_ok_cb other env  is %d\r\n", cb_data->event);
+			DBG_ERR_PRINT("rx_ok_cb other env  is %d\r\n", cb_data->event);
 		}
 		
 		if(cb_data->event != DWT_SIG_RX_TIMEOUT)
