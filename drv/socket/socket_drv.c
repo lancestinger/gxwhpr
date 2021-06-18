@@ -1,38 +1,38 @@
 /******************************************************************************
 
-                  版权所有 (C), 2018-2025, GridSatellite
+                  ???? (C), 2018-2025, GridSatellite
 
  ******************************************************************************
-  文 件 名   : socket_drv.c
-  版 本 号   : 初稿
-  作    者   : wzq
-  生成日期   : 2019年7月26日
-  最近修改   :
-  功能描述   : socket驱动程序
-  函数列表   :
-  修改历史   :
-  1.日    期   : 2019年7月26日
-    作    者   : wzq
-    修改内容   : 创建文件
+  ? ? ?   : socket_drv.c
+  ? ? ?   : ??
+  ?    ?   : wzq
+  ????   : 2019?7?26?
+  ????   :
+  ????   : socket????
+  ????   :
+  ????   :
+  1.?    ?   : 2019?7?26?
+    ?    ?   : wzq
+    ????   : ????
 
 ******************************************************************************/
 
 
-/*------------------------------头文件------------------------------*/
+/*------------------------------???------------------------------*/
 #include "socket/socket_drv.h"
 #include "drv/uart/uart_drv.h"
 #include "project_def.h"
 #include "sys_debug.h"
 
-/*------------------------------头文件------------------------------*/
+/*------------------------------???------------------------------*/
 
 
-/*------------------------------文件宏------------------------------*/
+/*------------------------------???------------------------------*/
 
-/*------------------------------文件宏------------------------------*/
+/*------------------------------???------------------------------*/
 
 
-/*------------------------------文件变量------------------------------*/
+/*------------------------------????------------------------------*/
 static SOCKADDR_IN socket_handle[SOCKET_NUM];
 static U8 tcp_addr_port[4]={0};
 static U8 MS_ID_cnt =0;
@@ -62,31 +62,39 @@ static socket_drv_t socket_drv_cfg[SOCKET_NUM] =
 		9099,
 	},
 
+	/* socket4 */
+	{
+		0,
+		TRUE,
+		&socket_handle[SOCKET_4],
+		9999,
+	},
+
 };
-/*------------------------------文件变量------------------------------*/
+/*------------------------------????------------------------------*/
 
-int Net_lock = 0;//网络收发互斥锁
+int Net_lock = 0;//???????
 
-/*------------------------------函数声明------------------------------*/
+/*------------------------------????------------------------------*/
 
-/*------------------------------函数声明------------------------------*/
+/*------------------------------????------------------------------*/
 
 /*****************************************************************************
- 函 数 名  : socket_send_msg
- 功能描述  : socket发送数据
- 输入参数  : socket_type_enum type    
+ ? ? ?  : socket_send_msg
+ ????  : socket????
+ ????  : socket_type_enum type    
              SOCKADDR_IN* dst_socket  
              U8* buf                  
              U32 len                  
- 输出参数  : 无
- 返 回 值  : 
- 调用函数  : 
- 被调函数  : 
+ ????  : ?
+ ? ? ?  : 
+ ????  : 
+ ????  : 
  
- 修改历史      :
-  1.日    期   : 2019年7月26日
-    作    者   : wzq
-    修改内容   : 新生成函数
+ ????      :
+  1.?    ?   : 2019?7?26?
+    ?    ?   : wzq
+    ????   : ?????
 
 *****************************************************************************/
 S32 socket_TCP_send_msg(socket_type_enum type, U8* buf, U32 len, IN S32 flag)
@@ -97,12 +105,12 @@ S32 socket_TCP_send_msg(socket_type_enum type, U8* buf, U32 len, IN S32 flag)
 		ret = send(socket_drv_cfg[type].socket_fd, (CHAR_T*)buf, len,flag);
 		if(ret < 0)
 		{
-			DBG_Socket_Print("TCP(%d)发送数据失败!!!!!!!\r\n", socket_drv_cfg[type].local_port); 
+			DBG_Socket_Print("TCP(%d)??????!!!!!!!\r\n", socket_drv_cfg[type].local_port); 
 			DBG_Socket_Print("TCP Send ret = %d\r\n",ret);
 		}
 		else
 		{
-			DBG_Socket_Print("TCP(%d)发送数据成功!!\r\n", socket_drv_cfg[type].local_port);
+			DBG_Socket_Print("TCP(%d)??????!!\r\n", socket_drv_cfg[type].local_port);
 		}
 		return ret;
 	}
@@ -117,16 +125,16 @@ S32 socket_UDP_send_msg(socket_type_enum type, IN SOCKADDR_IN* dst_socket, U8* b
 	if(socket_drv_cfg[type].tcp_enable == FALSE)
 	{
 		ret = sendto(socket_drv_cfg[type].socket_fd, (CHAR_T*)buf, len, MSG_DONTWAIT,(SOCKADDR *)dst_socket, sizeof(SOCKADDR_IN));//MSG_DONTWAIT
-		DBG_Socket_Print("\r\nUDP发送数据[len:%u][IP:%u.%u.%u.%u][port:%u]: ", len, dst_socket->sin_addr.s_b1,dst_socket->sin_addr.s_b2,dst_socket->sin_addr.s_b3,dst_socket->sin_addr.s_b4,htons(dst_socket->sin_port));
+		DBG_Socket_Print("\r\nUDP????[len:%u][IP:%u.%u.%u.%u][port:%u]: ", len, dst_socket->sin_addr.s_b1,dst_socket->sin_addr.s_b2,dst_socket->sin_addr.s_b3,dst_socket->sin_addr.s_b4,htons(dst_socket->sin_port));
 
 		if(ret < 0)
 		{
 			over_time++;
-			DBG_Socket_Print("UDP(%d)发送数据[len:%u][IP:%u.%u.%u.%u][port:%u]失败,错误码:%d!!!!!!!\r\n", socket_drv_cfg[type].local_port,len, dst_socket->sin_addr.s_b1,dst_socket->sin_addr.s_b2,dst_socket->sin_addr.s_b3,dst_socket->sin_addr.s_b4,htons(dst_socket->sin_port),ret);
+			DBG_Socket_Print("UDP(%d)????[len:%u][IP:%u.%u.%u.%u][port:%u]??,???:%d!!!!!!!\r\n", socket_drv_cfg[type].local_port,len, dst_socket->sin_addr.s_b1,dst_socket->sin_addr.s_b2,dst_socket->sin_addr.s_b3,dst_socket->sin_addr.s_b4,htons(dst_socket->sin_port),ret);
 		}
 		else
 		{
-			DBG_Socket_Print("UDP发送成功!!返回码:%d\r\n",ret);
+			DBG_Socket_Print("UDP????!!???:%d\r\n",ret);
 		}
 	}
 }
@@ -138,20 +146,20 @@ void udp_send_ms(char* out, size_t len_out)
 
 
 /*****************************************************************************
- 函 数 名  : socket_send_broardcast_msg
- 功能描述  : 发送广播消息
- 输入参数  : socket_type_enum type  
+ ? ? ?  : socket_send_broardcast_msg
+ ????  : ??????
+ ????  : socket_type_enum type  
              U8* buf                
              U32 len                
- 输出参数  : 无
- 返 回 值  : 
- 调用函数  : 
- 被调函数  : 
+ ????  : ?
+ ? ? ?  : 
+ ????  : 
+ ????  : 
  
- 修改历史      :
-  1.日    期   : 2019年9月4日
-    作    者   : wzq
-    修改内容   : 新生成函数
+ ????      :
+  1.?    ?   : 2019?9?4?
+    ?    ?   : wzq
+    ????   : ?????
 
 *****************************************************************************/
 void socket_send_broardcast_msg(socket_type_enum type, U16 port, U8* buf, U32 len)
@@ -165,7 +173,7 @@ void socket_send_broardcast_msg(socket_type_enum type, U16 port, U8* buf, U32 le
 	if(socket_drv_cfg[type].tcp_enable == FALSE)
 	{
 		ret = sendto(socket_drv_cfg[type].socket_fd, (CHAR_T*)buf, len, MSG_DONTWAIT,(SOCKADDR *)&dst_socket, sizeof(SOCKADDR_IN));
-		DBG_Socket_Print("\r\n广播发送数据[len:%u][port:%u]: ", len, port);
+		DBG_Socket_Print("\r\n??????[len:%u][port:%u]: ", len, port);
 		for(i = 0; i < len; i++)
 		{
 			DBG_Socket_Print("%02X ", buf[i]);
@@ -173,29 +181,29 @@ void socket_send_broardcast_msg(socket_type_enum type, U16 port, U8* buf, U32 le
 		DBG_Socket_Print("\r\n");
 		if(ret < 0)
 		{
-			DBG_Socket_Print("UDP广播(%d)发送数据失败,错误码:%d!!!!!!!\r\n", socket_drv_cfg[type].local_port,ret);
+			DBG_Socket_Print("UDP??(%d)??????,???:%d!!!!!!!\r\n", socket_drv_cfg[type].local_port,ret);
 		}
 	}
 }
 
 
 /*****************************************************************************
- 函 数 名  : socket_rcv_msg
- 功能描述  : socket接收数据
- 输入参数  : socket_type_enum type          
+ ? ? ?  : socket_rcv_msg
+ ????  : socket????
+ ????  : socket_type_enum type          
              INOUT SOCKADDR_IN* src_socket  
              S32 flags                      
              INOUT U8* rcv_buf              
              U32 buf_len                    
- 输出参数  : 无
- 返 回 值  : 
- 调用函数  : 
- 被调函数  : 
+ ????  : ?
+ ? ? ?  : 
+ ????  : 
+ ????  : 
  
- 修改历史      :
-  1.日    期   : 2019年7月26日
-    作    者   : wzq
-    修改内容   : 新生成函数
+ ????      :
+  1.?    ?   : 2019?7?26?
+    ?    ?   : wzq
+    ????   : ?????
 
 *****************************************************************************/
 S32 socket_rcv_msg(socket_type_enum type, INOUT SOCKADDR_IN* src_socket, S32 flags, INOUT U8* rcv_buf, U32 buf_len)
@@ -215,7 +223,7 @@ S32 socket_rcv_msg(socket_type_enum type, INOUT SOCKADDR_IN* src_socket, S32 fla
 				UDPBuff.RX_flag = TRUE;
 				MS_ID_cnt=0;
 			}
-			DBG_Socket_Print("\r\nUDP接收数据[sockt:%u][len:%u][port:%u]: ", type, ret, htons(src_socket->sin_port));
+			DBG_Socket_Print("\r\nUDP????[sockt:%u][len:%u][port:%u]: ", type, ret, htons(src_socket->sin_port));
 			/*
 			for(i = 0; i < ret; i++)
 			{
@@ -251,7 +259,15 @@ S32 socket_tcp_connect(socket_type_enum type)
 	int time_out=5000;
 	U8 bDontLinger = FALSE;
 	
-	if(socket_drv_cfg[type].tcp_enable == TRUE)		//TCP Client 配置
+	if(type == SOCKET_4)
+	{
+		tcp_addr_port[0]=192;
+		tcp_addr_port[1]=168;
+		tcp_addr_port[2]=10;
+		tcp_addr_port[3]=188;
+	}
+	
+	if(socket_drv_cfg[type].tcp_enable == TRUE)		//TCP Client ??
 	{
 		if(socket_drv_cfg[type].socket_fd>0)
 		{
@@ -273,7 +289,7 @@ S32 socket_tcp_connect(socket_type_enum type)
 			socket_drv_cfg[type].p_socket_handle->sin_port = htons(main_handle_g.cfg.net.ntrip_port);
 		}
 		else
-		{   //后续可添加其他socket
+		{   //???????socket
 			socket_drv_cfg[type].p_socket_handle->sin_port = htons(socket_drv_cfg[type].local_port);
 		}
 		socket_drv_cfg[type].p_socket_handle->sin_addr.s_b1 = tcp_addr_port[0];
@@ -282,13 +298,13 @@ S32 socket_tcp_connect(socket_type_enum type)
 		socket_drv_cfg[type].p_socket_handle->sin_addr.s_b4 = tcp_addr_port[3];
 		if (connect(socket_drv_cfg[type].socket_fd, (SOCKADDR *)(socket_drv_cfg[type].p_socket_handle), sizeof(SOCKADDR)) < 0)
 		{
-			DBG_Socket_Print("socket(tcp-%u)连接[IP:%u.%u.%u.%u][port:%u]失败!\r\n", socket_drv_cfg[type].local_port,tcp_addr_port[0],tcp_addr_port[1],tcp_addr_port[2],tcp_addr_port[3],htons(socket_drv_cfg[type].local_port));
+			DBG_Socket_Print("socket(tcp-%u)??[IP:%u.%u.%u.%u][port:%u]??!\r\n", socket_drv_cfg[type].local_port,tcp_addr_port[0],tcp_addr_port[1],tcp_addr_port[2],tcp_addr_port[3],htons(socket_drv_cfg[type].local_port));
 			return 1;
 		}
 		//setsockopt(socket_drv_cfg[type].socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&time_out, sizeof (time_out));
 		//setsockopt(socket_drv_cfg[type].socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&time_out, sizeof (time_out));
 
-		DBG_Socket_Print("socket(tcp-%u)连接[IP:%u.%u.%u.%u][port:%u]成功!!!!!!\r\n", socket_drv_cfg[type].local_port,tcp_addr_port[0],tcp_addr_port[1],tcp_addr_port[2],tcp_addr_port[3],htons(socket_drv_cfg[type].local_port));
+		DBG_Socket_Print("socket(tcp-%u)??[IP:%u.%u.%u.%u][port:%u]??!!!!!!\r\n", socket_drv_cfg[type].local_port,tcp_addr_port[0],tcp_addr_port[1],tcp_addr_port[2],tcp_addr_port[3],htons(socket_drv_cfg[type].local_port));
 	}
 
 	return 0;
@@ -300,7 +316,7 @@ S32 socket_tcp_disconnect(socket_type_enum type)
 {
 	int rc;
 
-	if(socket_drv_cfg[type].tcp_enable == TRUE)		//TCP Client 配置
+	if(socket_drv_cfg[type].tcp_enable == TRUE)		//TCP Client ??
 	{
 		if(socket_drv_cfg[type].socket_fd>0)
 		{
@@ -317,18 +333,18 @@ S32 socket_tcp_disconnect(socket_type_enum type)
 
 
 /*****************************************************************************
- 函 数 名  : socket_drv_init
- 功能描述  : socket创建
- 输入参数  : void  
- 输出参数  : 无
- 返 回 值  : 
- 调用函数  : 
- 被调函数  : 
+ ? ? ?  : socket_drv_init
+ ????  : socket??
+ ????  : void  
+ ????  : ?
+ ? ? ?  : 
+ ????  : 
+ ????  : 
  
- 修改历史      :
-  1.日    期   : 2019年7月26日
-    作    者   : wzq
-    修改内容   : 新生成函数
+ ????      :
+  1.?    ?   : 2019?7?26?
+    ?    ?   : wzq
+    ????   : ?????
 
 *****************************************************************************/
 void socket_udp_drv_init(socket_type_enum type)
@@ -338,7 +354,7 @@ void socket_udp_drv_init(socket_type_enum type)
 	U8 bDontLinger = FALSE;
 
 	
-	if(socket_drv_cfg[type].tcp_enable == FALSE)		//UDP配置
+	if(socket_drv_cfg[type].tcp_enable == FALSE)		//UDP??
 	{
 		if(socket_drv_cfg[type].socket_fd>0)
 		{
@@ -352,7 +368,7 @@ void socket_udp_drv_init(socket_type_enum type)
 		socket_drv_cfg[type].socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
 		if(socket_drv_cfg[type].socket_fd < 0)
 		{
-			ERR_PRINT(("########################socket(udp-%u)创建失败!\r\n", socket_drv_cfg[type].local_port));
+			ERR_PRINT(("########################socket(udp-%u)????!\r\n", socket_drv_cfg[type].local_port));
 			return;
 		}
 		socket_drv_cfg[type].p_socket_handle->sin_family = AF_INET;
@@ -366,7 +382,7 @@ void socket_udp_drv_init(socket_type_enum type)
 			UDPBuff.RX_flag = FALSE;
 		}
 		else
-		{   //后续可添加其他socket
+		{   //???????socket
 			socket_drv_cfg[type].p_socket_handle->sin_port = htons(socket_drv_cfg[type].local_port);
 		}
 		/*
@@ -375,12 +391,12 @@ void socket_udp_drv_init(socket_type_enum type)
 				
 		if (bind(socket_drv_cfg[type].socket_fd, (SOCKADDR *)(socket_drv_cfg[type].p_socket_handle), sizeof(SOCKADDR)) < 0)
 		{
-			ERR_PRINT(("########################socket(udp-%u)绑定失败!\r\n", socket_drv_cfg[type].local_port));
+			ERR_PRINT(("########################socket(udp-%u)????!\r\n", socket_drv_cfg[type].local_port));
 			return;
 		}
 
 		
-		NOTE_PRINT(("########################socket(udp-%u)创建成功!!!!!!\r\n", socket_drv_cfg[type].local_port));
+		NOTE_PRINT(("########################socket(udp-%u)????!!!!!!\r\n", socket_drv_cfg[type].local_port));
 		delay_ms(100);
 	}
 

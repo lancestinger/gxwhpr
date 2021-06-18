@@ -8,10 +8,20 @@
 #include <stdlib.h>
 #include "Matrix_functions.h"
 #include "kalman/kalman_filter.h"
+#include "apl/server/server_apl.h"
+#include "drv/socket/socket_drv.h"
+
+
 
 //extern osMessageQueueId_t uwbQueueHandle;
 uint8_t UWB_SWICH = 0;
 uint8_t Least_fail = 0;
+static U8 EH_UWB_TCPCONN_FAILED;
+EH_UWB_WorkState_t EH_UWB_State;
+
+
+WGS ORIGN_eh;
+ECEF ORIGN_eh_ECEF;
 
 static U64 thread_EH_uwb_stk[SIZE_4K/8];
 static const osThreadAttr_t thread_EH_uwb_attr = {
@@ -20,9 +30,17 @@ static const osThreadAttr_t thread_EH_uwb_attr = {
   .priority = osPriorityNormal,
 };
 
+static U64 thread_EH_uwb_monitor_stk[SIZE_4K / 8];
+static const osThreadAttr_t thread_EH_uwb_monitor_attr = {
+  .stack_mem  = &thread_EH_uwb_monitor_stk[0],
+  .stack_size = sizeof(thread_EH_uwb_monitor_stk),
+  .priority = osPriorityBelowNormal6,
+};
+
+
 /*------------------------------文件变量------------------------------*/
 
-apdist aplist[]={
+apdist aplist[4]={
 
 #if 0
     //zfg
@@ -35,7 +53,7 @@ apdist aplist[]={
 	0xcdc5,{3.0932, 1.10476,9.129},//{-0.3068, 3.0868,9.129}
 	0xcc01,{16.946, -22.5812,9.013},//{18.0609, -21.6199,9.013}
 
-#else
+
     //phone point
 	0x1145,{-9.2225,-7.5942,3.24},//
 	0x118c,{-6.377,-38.1664,3.54},//
@@ -47,12 +65,10 @@ apdist aplist[]={
 	0xcc01,{19.9791,-24.7252,9.013},//{18.0609, -21.6199,9.013}
 
 #endif
-
-//0x1138,{5,4,3},
-   //0x1137,{4,3,5},
-   //0x1136,{3,4,5},
-   //0x1135,{0,0,0},
-
+	0x1145,{30.574730336,104.058285613,432.893},//经纬度
+	0x118c,{30.574667828,104.058286524,432.661},//经纬度//574730725//058327787
+	0x1955,{30.574667828,104.058119144,432.841},//经纬度
+	0xf4f9,{30.574731121,104.058119448,432.952},//经纬度
 };
 	char teststring[]={0x02,0x91,0x11,0x02,
 								0x01,0x30,
@@ -76,7 +92,7 @@ apdist aplist[]={
 								0x01};//目标坐标3,4,0
 /*------------------------------文件变量------------------------------*/
 								
-int tag_xyz(float *left_parameter,float *right_parameter, float *result,const int dimension, const int num)
+static int tag_xyz(float *left_parameter,float *right_parameter, float *result,const int dimension, const int num)
 {
 	float *matrix_a = (float *)GLOBAL_MALLOC(sizeof(float)*(num-1)*dimension);
 	float *matrix_b = (float *)GLOBAL_MALLOC(sizeof(float)*(num-1));
@@ -210,7 +226,48 @@ kalman2_state kalman2_x = {.x = {4.01,4.01},.p = {{10e-3,0}, {0,10e-3}},.A = {{1
 kalman2_state kalman2_y = {.x = {2.01,2.01},.p = {{10e-3,0}, {0,10e-3}},.A = {{1, 0.1}, {0, 1}},.H = {1,0},.q = {10e-3,10e-3},.r = 1};
 
 
-int uwb_parse(UWBParse *uwbParse,char *buf)
+static U8 EH_uwb_stat_change(void)
+{
+	static WGS LLA_eh;
+	static ECEF ECEF_eh;
+	static ENU ENU_eh;
+	
+	int i,j;
+
+	for(i = 0; i < sizeof(aplist)/sizeof(aplist[0]); i++)
+	{
+		if(aplist[i].addr == 0xf4f9)
+		{
+			ORIGN_eh.latitude = aplist[i].zxy.x;
+			ORIGN_eh.longitude = aplist[i].zxy.y;
+			ORIGN_eh.height = aplist[i].zxy.z; 
+			
+			WGSToECEF(&ORIGN_eh,&ORIGN_eh_ECEF);
+			GLOBAL_PRINT(("ORIGN_eh_ECEF:%.8lf,%.8lf,%.8lf\r\n",ORIGN_eh_ECEF.x,ORIGN_eh_ECEF.y,ORIGN_eh_ECEF.z));
+		}	
+	}
+
+	for(j = 0; j < sizeof(aplist)/sizeof(aplist[0]); j++)
+	{
+		LLA_eh.latitude = aplist[j].zxy.x;
+		LLA_eh.longitude = aplist[j].zxy.y;
+		LLA_eh.height = aplist[j].zxy.z;
+		
+		WGSToECEF(&LLA_eh,&ECEF_eh);
+		ECEFToENU(&ECEF_eh,&ORIGN_eh,&ENU_eh);
+		aplist[j].zxy.x = ENU_eh.easting;
+		aplist[j].zxy.y = ENU_eh.northing;
+		aplist[j].zxy.z = ENU_eh.upping;
+
+		GLOBAL_PRINT(("%d:%f,%f,%f\r\n",aplist[j].addr,aplist[j].zxy.x,aplist[j].zxy.y,aplist[j].zxy.z));
+	}
+
+	GLOBAL_PRINT(("Aplist change over!!\r\n"));
+
+	return 0;
+}
+
+static int uwb_parse(UWBParse *uwbParse,char *buf)
 {
 	//int i;
 	float Avr_tagz=0;
@@ -269,6 +326,57 @@ int uwb_parse(UWBParse *uwbParse,char *buf)
 	return 0;
 }
 
+static void _EH_uwb_monitor(void* arg)
+{
+	static U8 retry_cnt = 0;
+	static U8 flag=0;
+
+	while(1)
+	{
+		delay_ms(500);
+		
+		switch(EH_UWB_State)
+		{
+			case EH_UWB_INIT:
+				
+				if(socket_tcp_connect(SOCKET_4) != 0 )
+				{
+					EH_UWB_TCPCONN_FAILED = TRUE;
+					delay_ms(1000);
+					GLOBAL_PRINT(("EH_UWB TCP connect Overtime!!!\r\n"));
+				}
+				else
+				{
+					NOTE_PRINT(("EH_UWB TCP Connect OK!!\r\n"));
+					EH_UWB_TCPCONN_FAILED = FALSE;
+				}
+				
+				if(EH_UWB_TCPCONN_FAILED)
+					EH_UWB_State = EH_UWB_INIT;
+				else
+					EH_UWB_State = EH_UWB_IDEL;
+				break;
+
+			case EH_UWB_IDEL:
+				
+				//空闲LED闪烁
+				if(!flag){
+					HAL_GPIO_WritePin(GPIOA,GPIO_PIN_15,GPIO_PIN_SET);
+					flag = TRUE;
+				}else{
+					HAL_GPIO_WritePin(GPIOA,GPIO_PIN_15,GPIO_PIN_RESET);
+					flag = FALSE;
+				}
+				
+				break;
+
+			default:
+				break;
+		}
+	}
+}
+
+
 /*****************************************************************************
  函 数 名  : _EH_uwb_thread
  功能描述  : EH_uwb线程
@@ -286,44 +394,65 @@ int uwb_parse(UWBParse *uwbParse,char *buf)
 *****************************************************************************/
 static void _EH_uwb_thread(void* arg)
 {
-	char *buf = NULL;
+	static char *buf = NULL;
 	uint16_t num = 0;
-	uwbStruct *outbuf = NULL;
-	netStruct *out =NULL;
-	UWBParse uwbParse = {0};
+	static uwbStruct *outbuf = NULL;
+	static netStruct *out = NULL;
+	netStruct netbuf;
+	UWBParse uwbParse;
+	static U8 flag=0;
 	
 	UwbUart.RX_flag = 0;
 	UwbUart.RX_Size = 0;
-	
+
+	EH_uwb_stat_change();
+
 	while(1){
-		if(UwbUart.RX_flag == 1 && UwbUart.RX_Size != 0)
+		if(UwbUart.RX_flag == 1 && UwbUart.RX_Size != 0 && EH_UWB_State == EH_UWB_IDEL)//
 		{
-			NOTE_PRINT(("Uwb_get_messege!!\r\n"));
+			NOTE_PRINT(("EH_Uwb_get_messege!!\r\n"));
 			num = UwbUart.RX_Size;
-		  	buf = (char *)GLOBAL_MALLOC(num);
+		  	//buf = (char *)GLOBAL_MALLOC(num);
 			GLOBAL_MEMSET(buf,0,num);
 			GLOBAL_MEMCPY(buf,UwbUart.RX_pData,num);
 			UwbUart.RX_flag = 0;
 			UwbUart.RX_Size = 0;
-			NOTE_PRINT(("Uwb num = %d\r\n",num));
-        	if(uwb_parse(&uwbParse,buf)<0)
-			{
-				GLOBAL_FREE(buf);
-				continue;
-			}
+			NOTE_PRINT(("EH_Uwb num = %d\r\n",num));
 			out = (netStruct *)GLOBAL_MALLOC(sizeof(netStruct));
-			GLOBAL_MEMSET(out,0,sizeof(netStruct));
-			outbuf = (uwbStruct *)GLOBAL_MALLOC(sizeof(uwbStruct));
-			GLOBAL_MEMSET(outbuf,0,sizeof(uwbStruct));
+			GLOBAL_MEMSET(out,0x0,sizeof(netStruct));
+			//outbuf = (uwbStruct *)GLOBAL_MALLOC(sizeof(uwbStruct));
+			//GLOBAL_MEMSET(outbuf,0x0,sizeof(uwbStruct));
+						
 			out->type = 1;
 			out->uwb = outbuf;
-			GLOBAL_MEMCPY(&(outbuf->uwbParse),&uwbParse,sizeof(UWBParse));
-			//if(my_QueuePut(uwbQueueHandle,&out,NULL,NULL)<0){
+			//GLOBAL_PRINT(("out->type 1 = %d\r\n",out->type));
+        	if(uwb_parse(&uwbParse,buf)<0)
+			{
+				WARN_PRINT(("EH_UWB Parse ERROR!!\r\n"));
+				continue;
+			}
+			else
+			{
+				GLOBAL_MEMCPY(&(outbuf->uwbParse),&uwbParse,sizeof(UWBParse));
+			}
+
+			memcpy(&netbuf,out,sizeof(netbuf));
+			//GLOBAL_PRINT(("out->type 3 = %d\r\n",netbuf.type));
+
+			if(!EH_UWB_upload(netbuf))
+			{
+				WARN_PRINT(("EH_UWB TCP send ERROR!!\r\n"));
+				EH_UWB_State = EH_UWB_INIT;
+			}
+
 			GLOBAL_FREE(out);
-			//}
-			GLOBAL_FREE(buf);
+			delay_ms(10);
 		}
-		delay_ms(5);
+		else
+		{
+			delay_ms(10);
+			//GLOBAL_PRINT(("EH_UWB waiting!!\r\n"));
+		}
 		
 	}
 }
@@ -347,9 +476,13 @@ static void _EH_uwb_thread(void* arg)
 void EH_uwb_apl_init(void)
 {
 	osThreadId_t thread_EH_uwb_id = 0;
+	osThreadId_t thread_EH_uwb_monitor_id = 0;
 
 	thread_EH_uwb_id = osThreadNew(_EH_uwb_thread, NULL, &thread_EH_uwb_attr);
 	GLOBAL_HEX(thread_EH_uwb_id);
+
+	thread_EH_uwb_monitor_id = osThreadNew(_EH_uwb_monitor, NULL, &thread_EH_uwb_monitor_attr);
+	GLOBAL_HEX(thread_EH_uwb_monitor_id);
 }
 
 

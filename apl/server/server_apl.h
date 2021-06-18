@@ -2,6 +2,8 @@
 #define _SERVER_APL_H__
 
 #include "project_def.h"
+#include "apl/EH_uwb/EH_uwb.h"
+
 
 #if defined(VERSION_YANCHONG)
 	#define BASE64_LIST   "+o2G4POYvUi9tLf6wbQzrSTlZqXEjVekhCuy3aJd8mxFc1nMH7NABKpI5WRsD0/g"  //自定义表
@@ -71,6 +73,7 @@ extern int num_strchr(const char *str, char c);
 extern int base64_decode(const char * base64, unsigned char * dedata);
 extern int base64_encode( const unsigned char * bindata, char * base64, int binlength );
 extern void UWB_Vel_Angle_calc(void);
+extern U8 EH_UWB_upload(netStruct netbuf);
 extern void Server_apl_init(void);
 
 #endif

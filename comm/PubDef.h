@@ -54,7 +54,7 @@ extern "C"
 #elif defined(VERSION_YANCHONG)
     #define PROJECT_NAME			"GXW_YanChong_HPR"
 #else
-	#define PROJECT_NAME			"GXWHPR"
+    #define PROJECT_NAME		"EH_UWB_v1.3"
 #endif
 
 //超级命令ANSI颜色定义

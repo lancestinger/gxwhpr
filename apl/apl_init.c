@@ -107,12 +107,12 @@ void apl_init(void)
 {
 	Led_light_int();
 	monitor_apl_init();
-	update_apl_init();
-	iotclient_init();
-	Ntrip_apl_Init();
-//	EH_uwb_apl_init();
-	Imu_apl_init();
-	Server_apl_init();
+	//update_apl_init();
+	//iotclient_init();
+	//Ntrip_apl_Init();
+	EH_uwb_apl_init();
+	//Imu_apl_init();
+	//Server_apl_init();
 	//UWB_apl_init();
 	
 }

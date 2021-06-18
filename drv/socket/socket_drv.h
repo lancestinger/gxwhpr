@@ -30,6 +30,7 @@ typedef enum
 	SOCKET_1 = 0,
 	SOCKET_2,
     SOCKET_3,
+    SOCKET_4,
 	SOCKET_NUM,
 }socket_type_enum;
 
